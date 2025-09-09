@@ -5,7 +5,8 @@
 from PyQt5.QtWidgets import QAction, QMessageBox, QDockWidget, QVBoxLayout, QWidget, QTabWidget
 from PyQt5.QtCore import Qt
 from qgis.core import QgsProject, QgsVectorLayer, QgsField, QgsEditorWidgetSetup, QgsMapLayer
-from qgis.gui import QgsMapLayerComboBox, QgsMapLayerProxyModel
+from qgis.gui import QgsMapLayerComboBox
+from qgis.core import QgsMapLayerProxyModel
 import os
 import sys
 
