@@ -207,3 +207,4 @@ def _collect_descendants(vocab_layer, concept_uri, descendants):
     for child_feature in vocab_layer.getFeatures(request):
         child_uri = child_feature['skos:Concept']
         _collect_descendants(vocab_layer, child_uri, descendants)
+        
