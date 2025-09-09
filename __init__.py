@@ -65,8 +65,9 @@ class qskos:
         self.dock_widget.hide()
 
         # Connect layer change signals for auto-refresh
-        QgsProject.instance().layerWasAdded.connect(lambda: QTimer.singleShot(0, self.refresh_layer_combos))
-        QgsProject.instance().layerWillBeRemoved.connect(lambda: QTimer.singleShot(0, self.refresh_layer_combos))
+        project = QgsProject.instance()
+        project.layerWasAdded.connect(self.schedule_refresh)
+        project.layerWillBeRemoved.connect(self.schedule_refresh)
 
     def setup_vocab_tab(self):
         """Fully implemented Vocabulary Tab UI for loading SKOS sources."""
@@ -110,11 +111,12 @@ class qskos:
         # Use form layout for labeled dropdowns
         form_layout = QFormLayout()
 
-        # Feature Layer Dropdown — ONLY layers with geometry
+        # Feature Layer Dropdown — ONLY layers with geometry, EXCLUDE vocab layers
         self.feature_layer_combo = QgsMapLayerComboBox()
         self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
         self.feature_layer_combo.setAllowEmptyLayer(True)
         self.feature_layer_combo.setShowCrs(True)
+        self.feature_layer_combo.layerChanged.connect(self.on_feature_layer_changed)
         form_layout.addRow("Feature Layer (Geometry):", self.feature_layer_combo)
 
         # Vocabulary Layer Dropdown — ONLY layers with qskos:scheme
@@ -221,52 +223,67 @@ class qskos:
         return scheme_uri if ok else None
 
     def refresh_layer_combos(self):
-        """Refresh dropdowns to show only valid layers."""
-        all_layers = list(QgsProject.instance().mapLayers().values())
-        
-        # Identify vocabulary layers by custom property
-        vocab_layer_ids = {
-            layer.id() for layer in all_layers
-            if layer.type() == QgsMapLayer.VectorLayer and layer.customProperty("qskos:scheme")
-        }
-        
-        # Feature Layer Combo: Vector + HasGeometry, but EXCLUDE vocab layers
-        self.feature_layer_combo.setLayer(None)
-        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
-        feature_excepted_layers = [
-            layer for layer in all_layers
-            if layer.id() in vocab_layer_ids
-        ]
-        self.feature_layer_combo.setExceptedLayerList(feature_excepted_layers)
+        """Safely refresh dropdowns to show only valid layers."""
+        try:
+            # If dock widget is gone or not visible, skip refresh
+            if not self.dock_widget or not self.dock_widget.isVisible():
+                return
 
-        # Vocab Layer Combo: Only layers with qskos:scheme
-        excepted_vocab_layers = [
-            layer for layer in all_layers
-            if layer.id() not in vocab_layer_ids
-        ]
-        self.vocab_layer_combo.setExceptedLayerList(excepted_vocab_layers)
-        self.vocab_layer_combo.setAllowEmptyLayer(True)
+            all_layers = list(QgsProject.instance().mapLayers().values())
+            
+            # Identify vocabulary layers by custom property
+            vocab_layer_ids = {
+                layer.id() for layer in all_layers
+                if layer.type() == QgsMapLayer.VectorLayer and layer.customProperty("qskos:scheme")
+            }
+            
+            # Refresh Feature Layer Combo
+            if self.feature_layer_combo:
+                self.feature_layer_combo.setLayer(None)
+                self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
+                feature_excepted_layers = [
+                    layer for layer in all_layers
+                    if layer.id() in vocab_layer_ids
+                ]
+                self.feature_layer_combo.setExceptedLayerList(feature_excepted_layers)
+
+            # Refresh Vocab Layer Combo
+            if self.vocab_layer_combo:
+                excepted_vocab_layers = [
+                    layer for layer in all_layers
+                    if layer.id() not in vocab_layer_ids
+                ]
+                self.vocab_layer_combo.setExceptedLayerList(excepted_vocab_layers)
+                self.vocab_layer_combo.setAllowEmptyLayer(True)
+
+        except RuntimeError:
+            # Widget was deleted — safe to ignore
+            pass
+        except Exception as e:
+            # Log unexpected errors (optional)
+            print(f"Error in refresh_layer_combos: {e}")
+
+    def schedule_refresh(self):
+        """Schedule a safe refresh of layer combos."""
+        if self.dock_widget:  # Only if plugin UI still exists
+            QTimer.singleShot(0, self.refresh_layer_combos)
 
     def bind_layers(self):
         """Bind the selected feature layer to the selected vocabulary layer."""
         feature_layer = self.feature_layer_combo.currentLayer()
         vocab_layer = self.vocab_layer_combo.currentLayer()
-        if not vocab_layer:
-            QMessageBox.warning(None, "Binding Error", "Please select a valid vocabulary layer.")
-            return
-        vocab_layer_id = vocab_layer.id()
 
         if not feature_layer:
             QMessageBox.warning(None, "Binding Error", "Please select a valid feature layer with geometry.")
             return
 
-        if not vocab_layer_id:
+        if not vocab_layer:
             QMessageBox.warning(None, "Binding Error", "Please select a valid vocabulary layer.")
             return
 
-        vocab_layer = QgsProject.instance().mapLayer(vocab_layer_id)
-        if not vocab_layer:
-            QMessageBox.warning(None, "Binding Error", "Selected vocabulary layer could not be found.")
+        # Extra safety: ensure feature layer is NOT a vocabulary layer
+        if feature_layer.customProperty("qskos:scheme"):
+            QMessageBox.warning(None, "Binding Error", "Cannot bind a vocabulary layer as a feature layer.")
             return
 
         scheme_uri = vocab_layer.customProperty("qskos:scheme")
@@ -378,19 +395,70 @@ class qskos:
             self.current_feature_layer.commitChanges()
             QMessageBox.information(None, "Field Deleted", "Annotation field removed.")
 
+    def on_feature_layer_changed(self, layer):
+        """Called when feature layer selection changes."""
+        if not layer:
+            self.tree_view.clear()
+            self.current_feature_layer = None
+            self.current_vocab_layer = None
+            return
+
+        # Check if this layer is bound to a vocabulary
+        scheme_uri = layer.customProperty("qskos:binding")
+        if not scheme_uri:
+            self.tree_view.clear()
+            self.current_feature_layer = layer
+            self.current_vocab_layer = None
+            return
+
+        # Find vocab layer by scheme URI
+        vocab_layer = self.find_vocab_layer_by_scheme(scheme_uri)
+        if vocab_layer:
+            self.load_concept_tree(layer, vocab_layer)
+        else:
+            self.tree_view.clear()
+            QMessageBox.warning(None, "Binding Broken", 
+                f"Vocabulary for scheme '{scheme_uri}' not found. Please re-bind.")
+            self.current_feature_layer = layer
+            self.current_vocab_layer = None
+
+    def find_vocab_layer_by_scheme(self, scheme_uri):
+        """Find a vocabulary layer by its qskos:scheme custom property."""
+        for layer in QgsProject.instance().mapLayers().values():
+            if (layer.type() == QgsMapLayer.VectorLayer and 
+                layer.customProperty("qskos:scheme") == scheme_uri):
+                return layer
+        return None
+
     def toggle_dock_widget(self):
         """Show or hide the dock widget."""
         if self.dock_widget.isVisible():
             self.dock_widget.hide()
         else:
             self.dock_widget.show()
+            # Optional: refresh comboboxes when dock is shown
+            self.refresh_layer_combos()
 
     def unload(self):
-        """Remove the plugin UI elements."""
+        """Remove the plugin UI elements and disconnect signals."""
+        # Disconnect layer signals
+        project = QgsProject.instance()
+        try:
+            project.layerWasAdded.disconnect(self.schedule_refresh)
+            project.layerWillBeRemoved.disconnect(self.schedule_refresh)
+        except TypeError:
+            # Signal was not connected or already disconnected
+            pass
+
+        # Remove toolbar icon
         self.iface.removeToolBarIcon(self.action)
+
+        # Remove dock widget
         if self.dock_widget:
             self.iface.removeDockWidget(self.dock_widget)
             self.dock_widget.deleteLater()
+            self.dock_widget = None
+
         del self.action
 
     def run(self):
