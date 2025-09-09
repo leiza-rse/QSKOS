@@ -5,7 +5,7 @@
 from PyQt5.QtWidgets import (
     QAction, QMessageBox, QDockWidget, QVBoxLayout, QWidget, QTabWidget,
     QPushButton, QTreeWidget, QFormLayout, QLineEdit, QComboBox, QFileDialog,
-    QLabel, QInputDialog, QTreeWidgetItem
+    QLabel, QInputDialog, QTreeWidgetItem, QHBoxLayout
 )
 from PyQt5.QtCore import Qt, QTimer
 from qgis.core import (
@@ -21,7 +21,8 @@ from .qskos_utils import (
     load_skos_source,
     convert_to_delimited_text_layer,
     build_concept_tree_from_layer,
-    get_descendant_uris
+    get_descendant_uris,
+    get_filtered_descendant_uris
 )
 
 
@@ -35,6 +36,7 @@ class qskos:
         self.tree_view = None
         self.current_vocab_layer = None
         self.current_feature_layer = None
+        self.selected_language = "en"  # Default language selection
 
     def initGui(self):
         """Initialize the plugin GUI: toolbar icon and dock widget."""
@@ -83,6 +85,13 @@ class qskos:
         ])
         layout.addRow("Source Type:", self.source_type_combo)
 
+        # Language Selector — NEW
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["en", "de"])
+        self.language_combo.setCurrentText("en")
+        self.language_combo.currentTextChanged.connect(self.on_language_changed)
+        layout.addRow("Display Language:", self.language_combo)
+
         # Source Path/URL Input
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText("Enter file path or URL...")
@@ -103,6 +112,10 @@ class qskos:
         layout.addRow("", self.vocab_status_label)
 
         self.vocab_tab.setLayout(layout)
+
+    def on_language_changed(self, lang):
+        """Update selected language for display and storage."""
+        self.selected_language = lang
 
     def setup_layer_tab(self):
         """Setup the Layer Binding and Tree View tab UI."""
@@ -177,8 +190,8 @@ class qskos:
         source_type = source_type_map[source_type_index]
 
         try:
-            # Load concepts
-            concepts = load_skos_source(source_text, source_type)
+            # Load concepts — pass selected language for filtering
+            concepts = load_skos_source(source_text, source_type, self.selected_language)
 
             if not concepts:
                 raise ValueError("No concepts loaded from source.")
@@ -188,8 +201,8 @@ class qskos:
             if not scheme_uri:
                 return  # User canceled
 
-            # Convert to layer
-            vocab_layer = convert_to_delimited_text_layer(concepts, scheme_uri)
+            # Convert to layer — store only selected language’s labels
+            vocab_layer = convert_to_delimited_text_layer(concepts, scheme_uri, self.selected_language)
 
             # Success
             self.vocab_status_label.setText(f"✅ Loaded: {vocab_layer.name()}")
@@ -304,7 +317,7 @@ class qskos:
         self.current_feature_layer = feature_layer
         self.current_vocab_layer = vocab_layer
 
-        root_items = build_concept_tree_from_layer(vocab_layer)
+        root_items = build_concept_tree_from_layer(vocab_layer, self.selected_language)
         for item in root_items:
             self.tree_view.addTopLevelItem(item)
 
@@ -336,7 +349,7 @@ class qskos:
             self.remove_annotation_field(concept_uri)
 
     def create_annotation_field(self, concept_uri, label):
-        """Create a new Map-type field with ValueRelation widget configured for descendants."""
+        """Create a new Map-type field with ValueRelation widget configured for siblings and descendants (excluding self)."""
         if not self.current_feature_layer or not self.current_vocab_layer:
             return
 
@@ -353,9 +366,13 @@ class qskos:
         # Configure ValueRelation widget
         field_index = self.current_feature_layer.fields().lookupField(concept_uri)
 
-        # Get descendant URIs for filtering
-        descendant_uris = get_descendant_uris(self.current_vocab_layer, concept_uri)
-        filter_expression = f'"skos:Concept" IN ({",".join([f"\'{uri}\'" for uri in descendant_uris])})'
+        # Get sibling and descendant URIs for filtering — EXCLUDE self
+        target_uris = get_filtered_descendant_uris(self.current_vocab_layer, concept_uri)
+        if not target_uris:
+            filter_expression = "0"  # No matches
+        else:
+            quoted_uris = [f"'{uri}'" for uri in target_uris]
+            filter_expression = f'"skos:Concept" IN ({",".join(quoted_uris)})'
 
         config = {
             'Layer': self.current_vocab_layer.id(),
