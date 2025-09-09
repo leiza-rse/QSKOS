@@ -374,3 +374,6 @@ class qskos:
     def run(self):
         """Legacy run method - now toggles dock widget."""
         self.toggle_dock_widget()
+
+def classFactory(iface):
+    return qskos(iface)
