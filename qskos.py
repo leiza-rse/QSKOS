@@ -199,30 +199,43 @@ class qskos:
 
         return action
 
-    def initGui(self):
-        """Create the menu entries and toolbar icons inside the QGIS GUI."""
+def initGui(self):
+    """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-        icon_path = ':/plugins/qskos/icon.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'SKOS Annotation'),
-            callback=self.run,
-            parent=self.iface.mainWindow())
+    # 👇 Use QIcon() for no icon — text label will be shown instead
+    self.action = QAction(
+        QIcon(),  # ← Empty icon → text-only button
+        self.tr(u'SKOS Annotation'),
+        self.iface.mainWindow()
+    )
+    self.action.triggered.connect(self.run)
+    self.action.setStatusTip(self.tr('Open SKOS Annotation Dialog'))
+    self.action.setWhatsThis(self.tr('Open the qskos plugin to annotate features with SKOS vocabularies.'))
 
-        # will be set False in run()
-        self.first_start = True
+    # Add to Plugins menu
+    self.iface.addPluginToMenu(self.menu, self.action)
+    # Add to toolbar — will show as text button if no icon
+    self.iface.addToolBarIcon(self.action)
 
-    def unload(self):
-        """Removes the plugin menu item and icon from QGIS GUI."""
-        for action in self.actions:
-            self.iface.removePluginMenu(
-                self.tr(u'&qskos'),
-                action)
-            self.iface.removeToolBarIcon(action)
+    # Initialize Processing provider (optional)
+    self.initProcessing()
 
-        # Disconnect signals
-        QgsProject.instance().layerWasAdded.disconnect(self.on_layer_added_removed)
-        QgsProject.instance().layerWillBeRemoved.disconnect(self.on_layer_added_removed)
+    self.first_start = True
+
+def unload(self):
+    """Removes the plugin menu item and icon from QGIS GUI."""
+    # 👇 REMOVE ACTION
+    self.iface.removePluginMenu(self.tr(u'&qskos'), self.action)
+    self.iface.removeToolBarIcon(self.action)
+    del self.action
+
+    # Disconnect signals
+    QgsProject.instance().layerWasAdded.disconnect(self.on_layer_added_removed)
+    QgsProject.instance().layerWillBeRemoved.disconnect(self.on_layer_added_removed)
+
+    # Remove Processing provider
+    if self.provider:
+        QgsApplication.processingRegistry().removeProvider(self.provider)
 
     def on_layer_added_removed(self):
         """Slot for layer addition/removal. Uses a timer to avoid reentrancy."""
