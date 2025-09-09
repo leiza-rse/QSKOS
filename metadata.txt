@@ -1,0 +1,8 @@
+[general]
+name=qskos-qwen
+qgisMinimumVersion=3.4
+description=Annotate vector layer features with concepts from SKOS vocabularies.
+about=This plugin allows loading SKOS vocabularies, binding them to vector layers, and creating annotation fields based on the vocabulary structure.
+version=0.1
+author=Lasse Mempel-Länger
+email=your.email@example.com
