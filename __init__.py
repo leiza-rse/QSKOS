@@ -58,3 +58,14 @@ class qskosPlugin:
         """Removes the plugin menu item and icon from QGIS GUI."""
         if self.provider:
             QgsApplication.processingRegistry().removeProvider(self.provider)
+
+# -------------------------------------
+# 👇 ADD THIS FUNCTION FOR COMPATIBILITY
+# -------------------------------------
+def classFactory(iface):
+    """Load qskosPlugin class from file qskos.
+
+    :param iface: A QGIS interface instance.
+    :type iface: QgsInterface
+    """
+    return qskosPlugin(iface)
