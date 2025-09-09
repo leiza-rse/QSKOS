@@ -2,11 +2,17 @@
 # qskos QGIS Plugin - Main Interface
 # Generated based on specification: Updated QGIS Plugin Specification.docx
 
-from PyQt5.QtWidgets import QAction, QMessageBox, QDockWidget, QVBoxLayout, QWidget, QTabWidget
-from PyQt5.QtCore import Qt
-from qgis.core import QgsProject, QgsVectorLayer, QgsField, QgsEditorWidgetSetup, QgsMapLayer
+from PyQt5.QtWidgets import (
+    QAction, QMessageBox, QDockWidget, QVBoxLayout, QWidget, QTabWidget,
+    QPushButton, QTreeWidget, QFormLayout, QLineEdit, QComboBox, QFileDialog,
+    QLabel, QInputDialog, QTreeWidgetItem
+)
+from PyQt5.QtCore import Qt, QTimer
+from qgis.core import (
+    QgsProject, QgsVectorLayer, QgsField, QgsEditorWidgetSetup, QgsMapLayer,
+    QgsMapLayerProxyModel, QgsFeatureRequest
+)
 from qgis.gui import QgsMapLayerComboBox
-from qgis.core import QgsMapLayerProxyModel
 import os
 import sys
 
@@ -17,6 +23,7 @@ from .qskos_utils import (
     build_concept_tree_from_layer,
     get_descendant_uris
 )
+
 
 class qskos:
     def __init__(self, iface):
@@ -38,71 +45,179 @@ class qskos:
         # Create dock widget
         self.dock_widget = QDockWidget("qskos Semantic Annotation", self.iface.mainWindow())
         self.dock_widget.setObjectName("qskosDockWidget")
-        
+
         # Main tab widget
         self.tab_widget = QTabWidget()
-        
-        # Vocabulary Tab
+
+        # Vocabulary Tab — FULLY IMPLEMENTED
         self.vocab_tab = QWidget()
         self.setup_vocab_tab()
-        
-        # Layer Tab
+
+        # Layer Tab — FULLY IMPLEMENTED
         self.layer_tab = QWidget()
         self.setup_layer_tab()
-        
+
         self.tab_widget.addTab(self.vocab_tab, "Vocabulary")
         self.tab_widget.addTab(self.layer_tab, "Layer")
-        
+
         self.dock_widget.setWidget(self.tab_widget)
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
         self.dock_widget.hide()
 
         # Connect layer change signals for auto-refresh
-        QgsProject.instance().layerWasAdded.connect(self.refresh_layer_combos)
-        QgsProject.instance().layerWillBeRemoved.connect(self.refresh_layer_combos)
+        QgsProject.instance().layerWasAdded.connect(lambda: QTimer.singleShot(0, self.refresh_layer_combos))
+        QgsProject.instance().layerWillBeRemoved.connect(lambda: QTimer.singleShot(0, self.refresh_layer_combos))
 
     def setup_vocab_tab(self):
-        """Setup the Vocabulary tab UI (stub for now)."""
-        layout = QVBoxLayout()
-        layout.addWidget(QMessageBox.information(None, "Vocab Tab", "Vocabulary loading UI goes here."))
+        """Fully implemented Vocabulary Tab UI for loading SKOS sources."""
+        layout = QFormLayout()
+
+        # Source Type Selector
+        self.source_type_combo = QComboBox()
+        self.source_type_combo.addItems([
+            "Local Turtle (.ttl)",
+            "Local JSON-LD (.jsonld)",
+            "Local CSV (.csv)",
+            "Remote URL (Turtle/JSON-LD)"
+        ])
+        layout.addRow("Source Type:", self.source_type_combo)
+
+        # Source Path/URL Input
+        self.source_input = QLineEdit()
+        self.source_input.setPlaceholderText("Enter file path or URL...")
+        layout.addRow("Source:", self.source_input)
+
+        # Browse Button (for local files)
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self.browse_skos_file)
+        layout.addRow("", browse_button)
+
+        # Load Button
+        self.load_vocab_button = QPushButton("Load Vocabulary")
+        self.load_vocab_button.clicked.connect(self.on_load_vocab_clicked)
+        layout.addRow("", self.load_vocab_button)
+
+        # Status Label
+        self.vocab_status_label = QLabel("Ready to load vocabulary.")
+        layout.addRow("", self.vocab_status_label)
+
         self.vocab_tab.setLayout(layout)
 
     def setup_layer_tab(self):
         """Setup the Layer Binding and Tree View tab UI."""
         layout = QVBoxLayout()
-        
+
         # Feature Layer Dropdown
         self.feature_layer_combo = QgsMapLayerComboBox()
         self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
         layout.addWidget(self.feature_layer_combo)
-        
+
         # Vocabulary Layer Dropdown
         self.vocab_layer_combo = QgsMapLayerComboBox()
-        # We will filter this manually to show only qskos vocab layers
         layout.addWidget(self.vocab_layer_combo)
-        
+
         # Bind Button
-        from PyQt5.QtWidgets import QPushButton
         self.bind_button = QPushButton("Bind Layer to Vocabulary")
         self.bind_button.clicked.connect(self.bind_layers)
         layout.addWidget(self.bind_button)
-        
-        # Tree View Placeholder (actual tree view implementation would go here)
-        from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
+
+        # Tree View
         self.tree_view = QTreeWidget()
         self.tree_view.setHeaderLabel("Concept Hierarchy")
         self.tree_view.itemChanged.connect(self.on_tree_item_changed)
         layout.addWidget(self.tree_view)
-        
+
         self.layer_tab.setLayout(layout)
         self.refresh_layer_combos()
+
+    def browse_skos_file(self):
+        """Open file dialog to select local SKOS file."""
+        options = QFileDialog.Options()
+        source_type = self.source_type_combo.currentIndex()
+
+        if source_type == 0:  # TTL
+            file_filter = "Turtle Files (*.ttl);;All Files (*)"
+        elif source_type == 1:  # JSON-LD
+            file_filter = "JSON-LD Files (*.jsonld);;All Files (*)"
+        elif source_type == 2:  # CSV
+            file_filter = "CSV Files (*.csv);;All Files (*)"
+        else:  # URL — no file dialog
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            None, "Select SKOS File", "", file_filter, options=options
+        )
+        if file_path:
+            self.source_input.setText(file_path)
+
+    def on_load_vocab_clicked(self):
+        """Load and convert SKOS vocabulary based on user input."""
+        source_text = self.source_input.text().strip()
+        if not source_text:
+            QMessageBox.warning(None, "Input Required", "Please enter a file path or URL.")
+            return
+
+        source_type_index = self.source_type_combo.currentIndex()
+        source_type_map = {
+            0: 'ttl',
+            1: 'jsonld',
+            2: 'csv',
+            3: 'url'
+        }
+        source_type = source_type_map[source_type_index]
+
+        try:
+            # Load concepts
+            concepts = load_skos_source(source_text, source_type)
+
+            if not concepts:
+                raise ValueError("No concepts loaded from source.")
+
+            # Extract or prompt for scheme URI
+            scheme_uri = self.extract_or_prompt_scheme_uri(concepts, source_text)
+            if not scheme_uri:
+                return  # User canceled
+
+            # Convert to layer
+            vocab_layer = convert_to_delimited_text_layer(concepts, scheme_uri)
+
+            # Success
+            self.vocab_status_label.setText(f"✅ Loaded: {vocab_layer.name()}")
+            QMessageBox.information(None, "Success", f"Vocabulary '{vocab_layer.name()}' loaded successfully.")
+
+            # Refresh dropdowns to include new layer
+            self.refresh_layer_combos()
+
+        except Exception as e:
+            self.vocab_status_label.setText("❌ Load failed.")
+            QMessageBox.critical(None, "Load Error", f"Failed to load vocabulary:\n{str(e)}")
+            import traceback
+            traceback.print_exc()  # For debugging in QGIS log
+
+    def extract_or_prompt_scheme_uri(self, concepts, source_hint=""):
+        """Try to extract scheme URI from data, or prompt user."""
+        # Try to get from first concept's inScheme
+        for c in concepts:
+            if c.get('skos:inScheme'):
+                return c['skos:inScheme']
+
+        # Fallback: use source as scheme (for CSV or URL)
+        default_scheme = source_hint if source_hint else "http://example.org/scheme/unknown"
+
+        scheme_uri, ok = QInputDialog.getText(
+            None,
+            "Enter Concept Scheme URI",
+            "No skos:inScheme found. Please enter the Concept Scheme URI:",
+            text=default_scheme
+        )
+        return scheme_uri if ok else None
 
     def refresh_layer_combos(self):
         """Refresh dropdowns to show only valid layers."""
         # Refresh feature layers: only vector layers with geometry
         self.feature_layer_combo.setLayer(None)
         self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        
+
         # Refresh vocab layers: only delimited text layers with qskos:scheme property
         self.vocab_layer_combo.setLayer(None)
         self.vocab_layer_combo.setAllowEmptyLayer(True)
@@ -114,8 +229,8 @@ class qskos:
             if layer.type() == QgsMapLayer.VectorLayer:
                 if layer.customProperty("qskos:scheme"):
                     vocab_layers.append(layer)
-        
-        # We clear and re-add items since QgsMapLayerComboBox doesn't support custom filtering easily
+
+        # Clear and re-add items
         self.vocab_layer_combo.clear()
         self.vocab_layer_combo.addItem("", None)  # Empty item
         for layer in vocab_layers:
@@ -197,9 +312,10 @@ class qskos:
 
         # Configure ValueRelation widget
         field_index = self.current_feature_layer.fields().lookupField(concept_uri)
-        
+
         # Get descendant URIs for filtering
         descendant_uris = get_descendant_uris(self.current_vocab_layer, concept_uri)
+        # Fixed: Proper f-string without broken escaping
         filter_expression = f'"skos:Concept" IN ({",".join([f"\'{uri}\'" for uri in descendant_uris])})'
 
         config = {

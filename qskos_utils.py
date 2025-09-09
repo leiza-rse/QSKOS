@@ -17,6 +17,7 @@ try:
 except ImportError:
     RDFLIB_AVAILABLE = False
 
+
 def load_skos_source(source_path_or_url, source_type):
     """
     Load SKOS data from RDF or CSV source.
@@ -31,17 +32,22 @@ def load_skos_source(source_path_or_url, source_type):
     else:
         raise ValueError(f"Unsupported source type: {source_type}")
 
+
 def _load_from_rdf(source, source_format):
     """Load SKOS concepts from an RDF source using rdflib."""
     g = Graph()
     g.parse(source, format=source_format)
 
-    conceptList = []
+    # Collect unique concept subjects from both inScheme and topConceptOf
+    seen_concepts = []
     for p in [SKOS.inScheme, SKOS.topConceptOf]:
         for s in g.subjects(p, None):
-            conceptList.append(s)
+            if s not in seen_concepts:
+                seen_concepts.append(s)
 
-    for concept in conceptList:
+    # Build concept dictionaries
+    concepts = []
+    for concept in seen_concepts:
         concept_uri = str(concept)
         pref_labels = _get_language_map(g, concept, SKOS.prefLabel)
         definitions = _get_language_map(g, concept, SKOS.definition)
@@ -54,14 +60,15 @@ def _load_from_rdf(source, source_format):
             in_scheme = str(s)
             break
 
-        conceptList.append({
+        concepts.append({
             'skos:Concept': concept_uri,
             'skos:prefLabel': pref_labels,
             'skos:definition': definitions,
             'skos:broader': broader,
             'skos:inScheme': in_scheme
         })
-    return conceptList
+    return concepts
+
 
 def _get_language_map(graph, subject, predicate):
     """Helper to get language-tagged literals as a pipe-separated string."""
@@ -72,6 +79,7 @@ def _get_language_map(graph, subject, predicate):
         else:
             literals.append(str(obj))
     return "|".join(literals)
+
 
 def _load_from_csv(file_path):
     """Load SKOS concepts from a CSV file."""
@@ -89,6 +97,7 @@ def _load_from_csv(file_path):
                 'skos:inScheme': row.get('skos:inScheme', '').strip()
             })
     return concepts
+
 
 def convert_to_delimited_text_layer(concepts, scheme_uri):
     """
@@ -119,6 +128,7 @@ def convert_to_delimited_text_layer(concepts, scheme_uri):
     # Add to project
     QgsProject.instance().addMapLayer(layer)
     return layer
+
 
 def build_concept_tree_from_layer(vocab_layer):
     """
@@ -151,6 +161,7 @@ def build_concept_tree_from_layer(vocab_layer):
 
     return root_items
 
+
 def _get_preferred_label(pref_label_str):
     """
     Extract preferred label: German (@de) with English (@en) fallback.
@@ -173,6 +184,7 @@ def _get_preferred_label(pref_label_str):
     else:
         return labels[0] if labels else ""
 
+
 def get_descendant_uris(vocab_layer, root_uri):
     """
     Recursively get all descendant URIs (including self) for a given root concept.
@@ -181,6 +193,7 @@ def get_descendant_uris(vocab_layer, root_uri):
     descendants = set()
     _collect_descendants(vocab_layer, root_uri, descendants)
     return list(descendants)
+
 
 def _collect_descendants(vocab_layer, concept_uri, descendants):
     """Recursive helper to collect all descendants."""
