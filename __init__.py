@@ -222,21 +222,29 @@ class qskos:
 
     def refresh_layer_combos(self):
         """Refresh dropdowns to show only valid layers."""
-        # Refresh feature layers: only vector layers with geometry
-        self.feature_layer_combo.setLayer(None)
-        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
-
-        # Refresh vocab layers: only layers with qskos:scheme
         all_layers = list(QgsProject.instance().mapLayers().values())
+        
+        # Identify vocabulary layers by custom property
         vocab_layer_ids = {
             layer.id() for layer in all_layers
             if layer.type() == QgsMapLayer.VectorLayer and layer.customProperty("qskos:scheme")
         }
-        excepted_layers = [
+        
+        # Feature Layer Combo: Vector + HasGeometry, but EXCLUDE vocab layers
+        self.feature_layer_combo.setLayer(None)
+        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
+        feature_excepted_layers = [
+            layer for layer in all_layers
+            if layer.id() in vocab_layer_ids
+        ]
+        self.feature_layer_combo.setExceptedLayerList(feature_excepted_layers)
+
+        # Vocab Layer Combo: Only layers with qskos:scheme
+        excepted_vocab_layers = [
             layer for layer in all_layers
             if layer.id() not in vocab_layer_ids
         ]
-        self.vocab_layer_combo.setExceptedLayerList(excepted_layers)
+        self.vocab_layer_combo.setExceptedLayerList(excepted_vocab_layers)
         self.vocab_layer_combo.setAllowEmptyLayer(True)
 
     def bind_layers(self):
