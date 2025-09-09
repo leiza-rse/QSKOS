@@ -250,7 +250,11 @@ class qskos:
     def bind_layers(self):
         """Bind the selected feature layer to the selected vocabulary layer."""
         feature_layer = self.feature_layer_combo.currentLayer()
-        vocab_layer_id = self.vocab_layer_combo.currentData()
+        vocab_layer = self.vocab_layer_combo.currentLayer()
+        if not vocab_layer:
+            QMessageBox.warning(None, "Binding Error", "Please select a valid vocabulary layer.")
+            return
+        vocab_layer_id = vocab_layer.id()
 
         if not feature_layer:
             QMessageBox.warning(None, "Binding Error", "Please select a valid feature layer with geometry.")
