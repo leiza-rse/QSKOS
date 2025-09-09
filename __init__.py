@@ -107,14 +107,22 @@ class qskos:
         """Setup the Layer Binding and Tree View tab UI."""
         layout = QVBoxLayout()
 
-        # Feature Layer Dropdown
+        # Use form layout for labeled dropdowns
+        form_layout = QFormLayout()
+
+        # Feature Layer Dropdown — only vector layers with geometry
         self.feature_layer_combo = QgsMapLayerComboBox()
         self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        layout.addWidget(self.feature_layer_combo)
+        self.feature_layer_combo.setAllowEmptyLayer(True)
+        self.feature_layer_combo.setShowCrs(True)
+        form_layout.addRow("Feature Layer (Geometry):", self.feature_layer_combo)
 
-        # Vocabulary Layer Dropdown
+        # Vocabulary Layer Dropdown — only layers with qskos:scheme
         self.vocab_layer_combo = QgsMapLayerComboBox()
-        layout.addWidget(self.vocab_layer_combo)
+        self.vocab_layer_combo.setAllowEmptyLayer(True)
+        form_layout.addRow("Vocabulary Layer (SKOS):", self.vocab_layer_combo)
+
+        layout.addLayout(form_layout)
 
         # Bind Button
         self.bind_button = QPushButton("Bind Layer to Vocabulary")
@@ -218,23 +226,18 @@ class qskos:
         self.feature_layer_combo.setLayer(None)
         self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
 
-        # Refresh vocab layers: only delimited text layers with qskos:scheme property
-        self.vocab_layer_combo.setLayer(None)
+        # Refresh vocab layers: only layers with qskos:scheme
+        all_layers = list(QgsProject.instance().mapLayers().values())
+        vocab_layer_ids = {
+            layer.id() for layer in all_layers
+            if layer.type() == QgsMapLayer.VectorLayer and layer.customProperty("qskos:scheme")
+        }
+        excepted_layers = [
+            layer for layer in all_layers
+            if layer.id() not in vocab_layer_ids
+        ]
+        self.vocab_layer_combo.setExceptedLayerList(excepted_layers)
         self.vocab_layer_combo.setAllowEmptyLayer(True)
-        self.vocab_layer_combo.setFilters(QgsMapLayerProxyModel.All)
-
-        # Manually filter vocab layers
-        vocab_layers = []
-        for layer in QgsProject.instance().mapLayers().values():
-            if layer.type() == QgsMapLayer.VectorLayer:
-                if layer.customProperty("qskos:scheme"):
-                    vocab_layers.append(layer)
-
-        # Clear and re-add items
-        self.vocab_layer_combo.clear()
-        self.vocab_layer_combo.addItem("", None)  # Empty item
-        for layer in vocab_layers:
-            self.vocab_layer_combo.addItem(layer.name(), layer.id())
 
     def bind_layers(self):
         """Bind the selected feature layer to the selected vocabulary layer."""
@@ -315,7 +318,6 @@ class qskos:
 
         # Get descendant URIs for filtering
         descendant_uris = get_descendant_uris(self.current_vocab_layer, concept_uri)
-        # Fixed: Proper f-string without broken escaping
         filter_expression = f'"skos:Concept" IN ({",".join([f"\'{uri}\'" for uri in descendant_uris])})'
 
         config = {
@@ -375,5 +377,7 @@ class qskos:
         """Legacy run method - now toggles dock widget."""
         self.toggle_dock_widget()
 
+
+# REQUIRED ENTRY POINT FOR QGIS
 def classFactory(iface):
     return qskos(iface)
