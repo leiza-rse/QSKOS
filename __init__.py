@@ -110,14 +110,14 @@ class qskos:
         # Use form layout for labeled dropdowns
         form_layout = QFormLayout()
 
-        # Feature Layer Dropdown — only vector layers with geometry
+        # Feature Layer Dropdown — ONLY layers with geometry
         self.feature_layer_combo = QgsMapLayerComboBox()
-        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
         self.feature_layer_combo.setAllowEmptyLayer(True)
         self.feature_layer_combo.setShowCrs(True)
         form_layout.addRow("Feature Layer (Geometry):", self.feature_layer_combo)
 
-        # Vocabulary Layer Dropdown — only layers with qskos:scheme
+        # Vocabulary Layer Dropdown — ONLY layers with qskos:scheme
         self.vocab_layer_combo = QgsMapLayerComboBox()
         self.vocab_layer_combo.setAllowEmptyLayer(True)
         form_layout.addRow("Vocabulary Layer (SKOS):", self.vocab_layer_combo)
@@ -224,7 +224,7 @@ class qskos:
         """Refresh dropdowns to show only valid layers."""
         # Refresh feature layers: only vector layers with geometry
         self.feature_layer_combo.setLayer(None)
-        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.feature_layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer | QgsMapLayerProxyModel.HasGeometry)
 
         # Refresh vocab layers: only layers with qskos:scheme
         all_layers = list(QgsProject.instance().mapLayers().values())
@@ -243,15 +243,23 @@ class qskos:
         """Bind the selected feature layer to the selected vocabulary layer."""
         feature_layer = self.feature_layer_combo.currentLayer()
         vocab_layer_id = self.vocab_layer_combo.currentData()
-        vocab_layer = QgsProject.instance().mapLayer(vocab_layer_id)
 
-        if not feature_layer or not vocab_layer:
-            QMessageBox.warning(None, "Binding Error", "Please select both a feature layer and a vocabulary layer.")
+        if not feature_layer:
+            QMessageBox.warning(None, "Binding Error", "Please select a valid feature layer with geometry.")
+            return
+
+        if not vocab_layer_id:
+            QMessageBox.warning(None, "Binding Error", "Please select a valid vocabulary layer.")
+            return
+
+        vocab_layer = QgsProject.instance().mapLayer(vocab_layer_id)
+        if not vocab_layer:
+            QMessageBox.warning(None, "Binding Error", "Selected vocabulary layer could not be found.")
             return
 
         scheme_uri = vocab_layer.customProperty("qskos:scheme")
         if not scheme_uri:
-            QMessageBox.warning(None, "Binding Error", "Selected vocabulary layer is not a valid qskos vocabulary.")
+            QMessageBox.warning(None, "Binding Error", "Selected vocabulary layer is not a valid qskos vocabulary (missing qskos:scheme).")
             return
 
         # Set binding property on feature layer
