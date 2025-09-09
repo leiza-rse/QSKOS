@@ -36,12 +36,12 @@ def _load_from_rdf(source, source_format):
     g = Graph()
     g.parse(source, format=source_format)
 
-    concepts = []
+    conceptList = []
     for p in [SKOS.inScheme, SKOS.topConceptOf]:
         for s in g.subjects(p, None):
-            concepts.append(s)
+            conceptList.append(s)
 
-    for concept in concepts:
+    for concept in conceptList:
         concept_uri = str(concept)
         pref_labels = _get_language_map(g, concept, SKOS.prefLabel)
         definitions = _get_language_map(g, concept, SKOS.definition)
@@ -54,14 +54,14 @@ def _load_from_rdf(source, source_format):
             in_scheme = str(s)
             break
 
-        concepts.append({
+        conceptList.append({
             'skos:Concept': concept_uri,
             'skos:prefLabel': pref_labels,
             'skos:definition': definitions,
             'skos:broader': broader,
             'skos:inScheme': in_scheme
         })
-    return concepts
+    return conceptList
 
 def _get_language_map(graph, subject, predicate):
     """Helper to get language-tagged literals as a pipe-separated string."""
