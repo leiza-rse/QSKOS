@@ -7,14 +7,17 @@ from PyQt5.QtWidgets import (
     QPushButton, QTreeWidget, QFormLayout, QLineEdit, QComboBox, QFileDialog,
     QLabel, QInputDialog, QTreeWidgetItem, QHBoxLayout
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QVariant
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsEditorWidgetSetup, QgsMapLayer,
-    QgsMapLayerProxyModel, QgsFeatureRequest
+    QgsMapLayerProxyModel, QgsFeatureRequest, QgsRuleBasedRenderer, QgsSymbol, 
+    QgsWkbTypes, QgsExpression, QgsSingleSymbolRenderer
 )
-from qgis.gui import QgsMapLayerComboBox
+from qgis.gui import QgsMapLayerComboBox, QgsRendererPropertiesDialog
+from PyQt5.QtGui import QColor
 import os
 import sys
+import random
 
 # Import utility functions from separate module
 from .qskos_utils import (
@@ -59,8 +62,13 @@ class qskos:
         self.layer_tab = QWidget()
         self.setup_layer_tab()
 
+        # Symbology Tab — UPDATED
+        self.symbology_tab = QWidget()
+        self.setup_symbology_tab()
+
         self.tab_widget.addTab(self.vocab_tab, "Vocabulary")
         self.tab_widget.addTab(self.layer_tab, "Layer")
+        self.tab_widget.addTab(self.symbology_tab, "Symbology")
 
         self.dock_widget.setWidget(self.tab_widget)
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -481,6 +489,271 @@ class qskos:
     def run(self):
         """Legacy run method - now toggles dock widget."""
         self.toggle_dock_widget()
+
+    # ================
+    # SYMBOLOGY TAB
+    # ================
+
+    def setup_symbology_tab(self):
+        """Setup the Symbology Tab UI."""
+        layout = QVBoxLayout()
+
+        info_label = QLabel("Generate hierarchical rule-based symbology grouped by annotation fields.")
+        layout.addWidget(info_label)
+
+        self.generate_symbology_button = QPushButton("Generate Rules from Annotations")
+        self.generate_symbology_button.clicked.connect(self.generate_rule_based_symbology)
+        layout.addWidget(self.generate_symbology_button)
+
+        self.reset_symbology_button = QPushButton("Reset to Default Symbology")
+        self.reset_symbology_button.clicked.connect(self.reset_symbology)
+        layout.addWidget(self.reset_symbology_button)
+
+        self.symbology_status_label = QLabel("Select a feature layer with annotation fields.")
+        layout.addWidget(self.symbology_status_label)
+
+        self.symbology_tab.setLayout(layout)
+
+    def reset_symbology(self):
+        """Reset layer symbology to default single symbol."""
+        layer = self.current_feature_layer
+        if not layer:
+            QMessageBox.warning(None, "No Layer", "No feature layer selected.")
+            return
+
+        symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+        renderer = QgsSingleSymbolRenderer(symbol)
+        layer.setRenderer(renderer)
+        layer.triggerRepaint()
+        self.iface.layerTreeView().refreshLayerSymbology(layer.id())
+        QMessageBox.information(None, "Reset", "Symbology reset to default.")
+        self.symbology_status_label.setText("✅ Symbology reset to default.")
+
+    def get_checked_concept_uris(self):
+        """Recursively get all checked concept URIs from the tree view."""
+        if not self.tree_view:
+            return []
+        root = self.tree_view.invisibleRootItem()
+        uris = []
+        self._collect_checked_uris(root, uris)
+        return uris
+
+    def _collect_checked_uris(self, parent_item, uris):
+        """Recursive helper to collect checked URIs."""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            if child.checkState(0) == Qt.Checked:
+                uri = child.data(0, Qt.UserRole)
+                uris.append(uri)
+            self._collect_checked_uris(child, uris)
+
+    def random_color(self):
+        """Generate a random QColor."""
+        return QColor(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+    def parse_pg_array_literal(self, s):
+        """
+        Parse PostgreSQL-style array literal: '{"a","b","c"}'
+        Returns list of strings.
+        """
+        if not isinstance(s, str) or not s.startswith('{') or not s.endswith('}'):
+            return []
+        # Strip braces
+        inner = s[1:-1]
+        if not inner:
+            return []
+        # Split by unquoted commas — QGIS escapes inner quotes as ""
+        parts = inner.split(',')
+        result = []
+        for part in parts:
+            part = part.strip()
+            if part.startswith('"') and part.endswith('"'):
+                part = part[1:-1]  # Remove surrounding quotes
+                part = part.replace('""', '"')  # Unescape doubled quotes
+            result.append(part)
+        return result
+
+    def generate_rule_based_symbology(self):
+        """Generate hierarchical rule-based symbology grouped by field (root concept)."""
+        layer = self.current_feature_layer
+        vocab_layer = self.current_vocab_layer
+
+        if not layer:
+            QMessageBox.warning(None, "No Layer", "Please select a feature layer first.")
+            return
+
+        if not vocab_layer:
+            QMessageBox.warning(None, "No Vocabulary", "Layer is not bound to a vocabulary.")
+            return
+
+        # Get all checked root concepts → these are our field groups
+        checked_uris = self.get_checked_concept_uris()
+        if not checked_uris:
+            QMessageBox.warning(None, "No Annotations", "No checked vocabulary concepts found. Please check some in the Layer tab.")
+            return
+
+        # Build mapping: URI → prefLabel + broader
+        uri_to_label = {}
+        uri_to_broader = {}
+        for feat in vocab_layer.getFeatures():
+            uri = feat['skos:Concept']
+            label = feat['skos:prefLabel']
+            broader = feat['skos:broader'] or None
+            uri_to_label[uri] = label
+            uri_to_broader[uri] = broader
+
+        # Build root → descendants map for each field
+        field_to_descendants = {}
+        for field_uri in checked_uris:
+            descendants = set(get_descendant_uris(vocab_layer, field_uri))
+            field_to_descendants[field_uri] = descendants
+
+        # Root rule for renderer
+        root_rule = QgsRuleBasedRenderer.Rule(None)
+
+        for field_uri in checked_uris:
+            field_label = uri_to_label.get(field_uri, field_uri)
+            field_index = layer.fields().lookupField(field_uri)
+            if field_index == -1:
+                continue
+
+            # Get all URIs used in this field across all features
+            directly_annotated_uris = set()
+            valid_descendants = field_to_descendants[field_uri]
+
+            for feat in layer.getFeatures():
+                val = feat[field_uri]
+                uri_list = []
+
+                # Handle NULL QVariant
+                if isinstance(val, QVariant) and val.isNull():
+                    val = None
+
+                if val is None or val == '':
+                    pass
+                elif isinstance(val, list):
+                    uri_list = [str(v).strip() for v in val if isinstance(v, str) and str(v).strip().startswith('http')]
+                elif isinstance(val, str):
+                    # PostgreSQL array literal: '{"a","b"}'
+                    if val.startswith('{') and val.endswith('}'):
+                        uri_list = self.parse_pg_array_literal(val)
+                        uri_list = [u for u in uri_list if u.startswith('http')]
+                    # Pipe-separated (QGIS default for shapefiles, etc.)
+                    elif '|' in val:
+                        parts = [p.strip() for p in val.split('|')]
+                        uri_list = [p for p in parts if p.startswith('http')]
+                    # JSON array (rare)
+                    elif val.startswith('[') and val.endswith(']'):
+                        try:
+                            import json
+                            parsed = json.loads(val)
+                            if isinstance(parsed, list):
+                                uri_list = [str(v).strip() for v in parsed if isinstance(v, str) and str(v).strip().startswith('http')]
+                        except:
+                            pass
+                    # Single URI
+                    else:
+                        stripped = val.strip()
+                        if stripped.startswith('http'):
+                            uri_list = [stripped]
+
+                for uri in uri_list:
+                    if uri in valid_descendants:
+                        directly_annotated_uris.add(uri)
+
+            # Helper to get ancestors up to field root
+            def get_ancestors(uri):
+                ancestors = []
+                visited = set()
+                current = uri
+                while current and current != field_uri and current not in visited:
+                    visited.add(current)
+                    parent = uri_to_broader.get(current)
+                    if not parent or parent == current:
+                        break
+                    ancestors.append(parent)
+                    if parent == field_uri:
+                        break
+                    current = parent
+                return ancestors
+
+            # Collect all concepts to visualize (annotated + ancestors)
+            concepts_to_visualize = set()
+            for uri in directly_annotated_uris:
+                concepts_to_visualize.add(uri)
+                ancestors = get_ancestors(uri)
+                for anc in ancestors:
+                    if anc in field_to_descendants[field_uri]:
+                        concepts_to_visualize.add(anc)
+
+            # Skip if nothing to visualize
+            if not concepts_to_visualize:
+                continue
+
+            # Create group rule
+            group_rule = QgsRuleBasedRenderer.Rule(
+                symbol=None,
+                filterExp='',
+                label=field_label,
+                description=''
+            )
+            group_rule.setActive(True)
+
+            # Create child rules
+            for uri in concepts_to_visualize:
+                if uri == field_uri:
+                    continue  # Skip root concept as child rule
+                label = uri_to_label.get(uri, uri)
+                desc_uris = get_descendant_uris(vocab_layer, uri)
+                if not desc_uris:
+                    continue
+
+                # Build OR expression for array_contains
+                # Build OR expression using LIKE to match URIs inside serialized arrays
+                # Handles: '{"uri1","uri2"}', 'uri1|uri2', '["uri1","uri2"]', etc.
+                or_clauses = []
+                for u in desc_uris:
+                    # Escape single quotes in URI if any
+                    safe_u = u.replace("'", "''")
+                    # Match if field contains the URI as substring (robust for all formats)
+                    or_clauses.append(f"\"{field_uri}\" LIKE '%{safe_u}%'")
+                expr_str = " OR ".join(or_clauses) if or_clauses else "0"
+
+                symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+                symbol.setColor(self.random_color())
+
+                child_rule = QgsRuleBasedRenderer.Rule(
+                    symbol=symbol.clone(),
+                    filterExp=expr_str,
+                    label=label,
+                    description=''
+                )
+                child_rule.setActive(True)
+                group_rule.appendChild(child_rule)
+
+            # Add ELSE rule for unannotated features in this field
+            else_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            else_symbol.setColor(QColor(200, 200, 200))  # Light gray
+            else_rule = QgsRuleBasedRenderer.Rule(
+                symbol=else_symbol,
+                filterExp='',
+                label='(Unannotated)',
+                description='',
+                elseRule=True  # ← Set elseRule in constructor
+            )
+            else_rule.setActive(True)
+            group_rule.appendChild(else_rule)
+            root_rule.appendChild(group_rule)
+
+        if root_rule.children():
+            renderer = QgsRuleBasedRenderer(root_rule)
+            layer.setRenderer(renderer)
+            layer.triggerRepaint()
+            self.iface.layerTreeView().refreshLayerSymbology(layer.id())
+            QMessageBox.information(None, "Success", f"Generated hierarchical symbology for {len(checked_uris)} fields.")
+            self.symbology_status_label.setText(f"✅ Generated symbology for {len(checked_uris)} fields.")
+        else:
+            QMessageBox.information(None, "No Data", "No annotation values found to generate symbology.")
 
 
 # REQUIRED ENTRY POINT FOR QGIS
