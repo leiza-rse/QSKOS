@@ -274,6 +274,7 @@ def get_filtered_descendant_uris(vocab_layer, root_uri):
     _collect_descendants(vocab_layer, root_uri, descendants)
     descendants.discard(root_uri)  # Explicitly exclude root
     return list(descendants)
+
     """
     Get all URIs that are either:
     - Siblings of the concept (same broader)

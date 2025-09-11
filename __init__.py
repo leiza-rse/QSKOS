@@ -690,32 +690,47 @@ class qskos:
             if not concepts_to_visualize:
                 continue
 
-            # Create group rule
+            # --- ✅ KEY CHANGE: Make GROUP RULE itself the ROOT RULE ---
+            # Get all descendant URIs — EXCLUDE root (since it's not annotatable)
+            all_descendant_uris = get_filtered_descendant_uris(vocab_layer, field_uri)
+
+            if not all_descendant_uris:
+                continue  # No descendants? Skip.
+
+            # Build OR expression using LIKE for descendant URIs only
+            or_clauses_root = []
+            for u in all_descendant_uris:
+                safe_u = u.replace("'", "''")
+                or_clauses_root.append(f"\"{field_uri}\" LIKE '%{safe_u}%'")
+            expr_str_root = " OR ".join(or_clauses_root) if or_clauses_root else "0"
+
+            # Create symbol for group rule
+            group_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            group_symbol.setColor(self.random_color())
+
+            # Create group rule WITH SYMBOL AND FILTER — it becomes a selectable rule!
             group_rule = QgsRuleBasedRenderer.Rule(
-                symbol=None,
-                filterExp='',
+                symbol=group_symbol.clone(),
+                filterExp=expr_str_root,
                 label=field_label,
-                description=''
+                description='All descendants (root not annotatable)'
             )
             group_rule.setActive(True)
 
-            # Create child rules
+            # --- Add CHILD RULES for DESCENDANTS ONLY (excluding root) ---
             for uri in concepts_to_visualize:
                 if uri == field_uri:
-                    continue  # Skip root concept as child rule
+                    continue  # Skip root — not annotatable
+
                 label = uri_to_label.get(uri, uri)
                 desc_uris = get_descendant_uris(vocab_layer, uri)
                 if not desc_uris:
                     continue
 
-                # Build OR expression for array_contains
-                # Build OR expression using LIKE to match URIs inside serialized arrays
-                # Handles: '{"uri1","uri2"}', 'uri1|uri2', '["uri1","uri2"]', etc.
+                # Build OR expression using LIKE
                 or_clauses = []
                 for u in desc_uris:
-                    # Escape single quotes in URI if any
                     safe_u = u.replace("'", "''")
-                    # Match if field contains the URI as substring (robust for all formats)
                     or_clauses.append(f"\"{field_uri}\" LIKE '%{safe_u}%'")
                 expr_str = " OR ".join(or_clauses) if or_clauses else "0"
 
@@ -739,10 +754,11 @@ class qskos:
                 filterExp='',
                 label='(Unannotated)',
                 description='',
-                elseRule=True  # ← Set elseRule in constructor
+                elseRule=True
             )
             else_rule.setActive(True)
             group_rule.appendChild(else_rule)
+
             root_rule.appendChild(group_rule)
 
         if root_rule.children():
