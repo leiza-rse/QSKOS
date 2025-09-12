@@ -1,5 +1,5 @@
 [general]
-name=qskos
+name=qskosdev
 description=Semantic annotation of vector features using SKOS vocabularies
 version=1.0
 qgisMinimumVersion=3.16
