@@ -274,38 +274,3 @@ def get_filtered_descendant_uris(vocab_layer, root_uri):
     _collect_descendants(vocab_layer, root_uri, descendants)
     descendants.discard(root_uri)  # Explicitly exclude root
     return list(descendants)
-    """
-    Get all URIs that are either:
-    - Siblings of the concept (same broader)
-    - Descendants of the concept (children, grandchildren, etc.)
-    EXCLUDES the concept itself.
-    """
-    target_uris = set()
-
-    # Get the broader of the concept
-    expr = f"\"skos:Concept\" = '{concept_uri}'"
-    request = QgsFeatureRequest().setFilterExpression(expr)
-    features = list(vocab_layer.getFeatures(request))
-    if not features:
-        return []
-
-    broader_uri = features[0]['skos:broader']
-
-    # Find all siblings (same broader, excluding self)
-    if broader_uri:
-        sibling_expr = f"\"skos:broader\" = '{broader_uri}' AND \"skos:Concept\" != '{concept_uri}'"
-    else:
-        # Root-level siblings: all top concepts except self
-        sibling_expr = f"(\"skos:broader\" IS NULL OR \"skos:broader\" = '') AND \"skos:Concept\" != '{concept_uri}'"
-
-    sibling_request = QgsFeatureRequest().setFilterExpression(sibling_expr)
-    for feat in vocab_layer.getFeatures(sibling_request):
-        target_uris.add(feat['skos:Concept'])
-
-    # Add all descendants of the concept (excluding self — handled in recursion start)
-    descendants = set()
-    _collect_descendants(vocab_layer, concept_uri, descendants)
-    descendants.discard(concept_uri)  # Explicitly exclude self
-    target_uris.update(descendants)
-
-    return list(target_uris)
