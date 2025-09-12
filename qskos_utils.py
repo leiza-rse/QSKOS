@@ -5,7 +5,7 @@
 import csv
 from qgis.core import QgsVectorLayer, QgsFeature, QgsField, QgsProject, QgsFeatureRequest
 from PyQt5.QtWidgets import QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QVariant
 import tempfile
 import os
 
@@ -240,37 +240,110 @@ def build_concept_tree_from_layer(vocab_layer, lang="en"):
     return root_items
 
 
-def get_descendant_uris(vocab_layer, root_uri):
+# 👇 NEW: Precomputed hierarchy index
+def build_hierarchy_index(vocab_layer):
     """
-    Recursively get all descendant URIs (including self) for a given root concept.
-    Uses skos:broader to traverse upwards and find all children.
+    Precompute a dict: parent_uri → [child_uri1, child_uri2, ...]
+    Includes None as key for root concepts.
+    Returns: children_map, concept_labels (uri → label)
     """
+    children_map = {}
+    concept_labels = {}
+
+    # Initialize with None for root concepts
+    children_map[None] = []
+
+    for feat in vocab_layer.getFeatures():
+        uri = feat['skos:Concept']
+        broader = feat['skos:broader'] or None  # Treat empty string as None
+        label = feat['skos:prefLabel']
+
+        concept_labels[uri] = label
+
+        if broader not in children_map:
+            children_map[broader] = []
+        children_map[broader].append(uri)
+
+    return children_map, concept_labels
+
+
+# 👇 NEW: Fast descendant collection using precomputed index
+def get_descendant_uris_fast(children_map, root_uri):
+    """
+    Get all descendants (including self) using precomputed children_map.
+    Uses BFS to avoid recursion depth issues.
+    """
+    # --- REMOVED INCORRECT CHECK ---
+    # The previous check `if root_uri not in children_map and root_uri not in children_map.get(None, []):`
+    # was incorrect because:
+    # 1. Leaf concepts are not KEYS in children_map (they have no children).
+    # 2. Leaf concepts might not be in children_map[None] (unless they are also roots).
+    # This caused the function to incorrectly return [] for valid leaf URIs.
+    # The BFS logic below correctly handles finding descendants (or just self if no children).
+
     descendants = set()
-    _collect_descendants(vocab_layer, root_uri, descendants)
+    queue = [root_uri]
+    while queue:
+        current = queue.pop(0)
+        if current in descendants:
+            continue
+        descendants.add(current)
+        # Add direct children
+        # children_map.get(current, []) handles cases where current is not a parent key
+        children_list = children_map.get(current, [])
+        for child in children_list:
+            if child not in descendants:
+                queue.append(child)
     return list(descendants)
 
-
-def _collect_descendants(vocab_layer, concept_uri, descendants):
-    """Recursive helper to collect all descendants."""
-    if concept_uri in descendants:
-        return
-    descendants.add(concept_uri)
-
-    # Find all concepts that have this concept as their broader
-    expr = f"\"skos:broader\" = '{concept_uri}'"
-    request = QgsFeatureRequest().setFilterExpression(expr)
-    for child_feature in vocab_layer.getFeatures(request):
-        child_uri = child_feature['skos:Concept']
-        _collect_descendants(vocab_layer, child_uri, descendants)
-
-
-def get_filtered_descendant_uris(vocab_layer, root_uri):
+def get_filtered_descendant_uris_fast(children_map, root_uri):
     """
-    Get all URIs that are descendants (children, grandchildren, etc.) of the given root concept.
-    EXCLUDES the root concept itself.
-    Ensures filter stays within the hierarchical branch defined by the root.
+    Get descendants excluding root.
     """
-    descendants = set()
-    _collect_descendants(vocab_layer, root_uri, descendants)
-    descendants.discard(root_uri)  # Explicitly exclude root
-    return list(descendants)
+    descendants = get_descendant_uris_fast(children_map, root_uri)
+    if root_uri in descendants:
+        descendants.remove(root_uri)
+    return descendants
+
+
+# 👇 NEW: Robust field value parser — no assumptions about URI format
+def parse_field_value(val):
+    """
+    Robustly parse annotation field value into list of URIs.
+    Handles: list, string (JSON, PostgreSQL array, pipe-separated), QVariant.
+    """
+    if isinstance(val, QVariant) and val.isNull():
+        return []
+    if isinstance(val, list):
+        return [str(v).strip() for v in val if isinstance(v, str) and v.strip()]
+    if isinstance(val, str):
+        s = val.strip()
+        if not s:
+            return []
+        # Try JSON
+        if s.startswith('[') and s.endswith(']'):
+            try:
+                import json
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if isinstance(x, str) and x.strip()]
+            except:
+                pass
+        # PostgreSQL array
+        if s.startswith('{') and s.endswith('}'):
+            try:
+                # Use QGIS expression parser for safety
+                from qgis.core import QgsExpression
+                exp = QgsExpression(f"string_to_array(trim(both '{{}}' from '{s}'), ',')")
+                result = exp.evaluate()
+                if isinstance(result, list):
+                    # Unescape double quotes
+                    return [x.replace('""', '"').strip().strip('"') for x in result if isinstance(x, str) and x.strip()]
+            except:
+                pass
+        # Pipe-separated
+        if '|' in s:
+            return [part.strip() for part in s.split('|') if part.strip()]
+        # Single value
+        return [s]
+    return []
