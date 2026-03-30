@@ -24,13 +24,19 @@ from .vocabulary import VocabularyManager
 from .layer import LayerManager
 from .symbology import SymbologyManager
 
-# Import utility functions from separate module
-from .qskos_utils import (
+# Import utility functions from separate modules
+from .hierarchy import (
     build_concept_tree_from_layer,
     build_hierarchy_index,
     get_descendant_uris_fast,
-    get_filtered_descendant_uris_fast,
-    parse_field_value
+    get_filtered_descendant_uris_fast
+)
+
+from .fields import parse_field_value
+
+from .skos import (
+    load_skos_source,
+    convert_to_delimited_text_layer
 )
 
 class qskos:
@@ -211,20 +217,8 @@ class qskos:
         """Generate hierarchical rule-based symbology grouped by annotation field (root concept), including ancestors and leaves."""
         self.symbology_manager.generate_rule_based_symbology()
 
-    def get_descendant_uris_fast(self, children_map, root_uri):
-        """Wrapper for get_descendant_uris_fast from qskos_utils."""
-        from .qskos_utils import get_descendant_uris_fast
-        return get_descendant_uris_fast(children_map, root_uri)
-
-    def get_filtered_descendant_uris_fast(self, children_map, root_uri):
-        """Wrapper for get_filtered_descendant_uris_fast from qskos_utils."""
-        from .qskos_utils import get_filtered_descendant_uris_fast
-        return get_filtered_descendant_uris_fast(children_map, root_uri)
-
-    def parse_field_value(self, val):
-        """Wrapper for parse_field_value from qskos_utils."""
-        from .qskos_utils import parse_field_value
-        return parse_field_value(val)
+    # All these functions are now imported directly from their respective modules
+    # The methods above were wrappers that are no longer needed
 
 # REQUIRED ENTRY POINT FOR QGIS — DO NOT REMOVE!
 def classFactory(iface):

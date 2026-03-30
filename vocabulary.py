@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import QMessageBox, QInputDialog
 import os
 
 # Import utility functions from separate module
-from .qskos_utils import (
+from .skos import (
     load_skos_source,
     convert_to_delimited_text_layer
 )

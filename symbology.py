@@ -12,10 +12,12 @@ from PyQt5.QtGui import QColor
 import random
 
 # Import utility functions from separate module
-from .qskos_utils import (
+from .hierarchy import (
     get_descendant_uris_fast,
     get_filtered_descendant_uris_fast
 )
+
+from .fields import parse_field_value
 
 
 class SymbologyManager:
@@ -136,7 +138,7 @@ class SymbologyManager:
             valid_descendants = field_to_descendants[field_uri]
             for feat in layer.getFeatures():
                 val = feat[field_uri]
-                uri_list = self.plugin.parse_field_value(val)
+                uri_list = parse_field_value(val)
                 # Filter URIs to only those valid for this field's hierarchy
                 uri_list = [u for u in uri_list if u in valid_descendants]
                 for uri in uri_list:
@@ -234,7 +236,7 @@ class SymbologyManager:
 
                 label = concept_labels.get(uri, uri)
                 # Get ALL descendants of this concept (including itself) for rule filter
-                desc_uris = self.plugin.get_descendant_uris_fast(children_map, uri)
+                desc_uris = get_descendant_uris_fast(children_map, uri)
                 if not desc_uris:
                     continue  # Shouldn't happen
 

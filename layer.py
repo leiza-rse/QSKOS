@@ -13,13 +13,14 @@ from PyQt5.QtWidgets import QMessageBox
 import os
 
 # Import utility functions from separate module
-from .qskos_utils import (
+from .hierarchy import (
     build_concept_tree_from_layer,
     build_hierarchy_index,
     get_descendant_uris_fast,
-    get_filtered_descendant_uris_fast,
-    parse_field_value
+    get_filtered_descendant_uris_fast
 )
+
+from .fields import parse_field_value
 
 
 class LayerManager:
