@@ -196,13 +196,13 @@ class LayerManager:
             filter_expression = "0"  # No matches
         else:
             quoted_uris = ["'" + uri.replace("'", "''") + "'" for uri in target_uris]
-            filter_expression = f'"skos:Concept" IN ({",".join(quoted_uris)})'
+            filter_expression = f'"concept" IN ({",".join(quoted_uris)})'
 
         config = {
             'Layer': self.plugin.current_vocab_layer.id(),
-            'Key': 'skos:Concept',
-            'Value': 'skos:prefLabel',
-            'Description': 'skos:definition',
+            'Key': 'concept',
+            'Value': 'prefLabel',
+            'Description': 'definition',
             'FilterExpression': filter_expression,
             'AllowMulti': True,
             'UseCompleter': True,

@@ -20,7 +20,7 @@ except ImportError:
 def load_skos_source(source_path_or_url, source_type, lang="en"):
     """
     Load SKOS data from RDF or CSV source.
-    Returns a list of dicts with keys: 'skos:Concept', 'skos:prefLabel', 'skos:definition', 'skos:broader', 'skos:inScheme'
+    Returns a list of dicts with keys: 'concept', 'prefLabel', 'definition', 'broader', 'inScheme'
     Language preference is applied to prefLabel and definition.
     """
     if source_type in ['ttl', 'jsonld', 'url']:
@@ -61,11 +61,11 @@ def _load_from_rdf(source, source_format, lang="en"):
             break
 
         concepts.append({
-            'skos:Concept': concept_uri,
-            'skos:prefLabel': pref_label or "",
-            'skos:definition': definition or "",
-            'skos:broader': broader,
-            'skos:inScheme': in_scheme
+            'concept': concept_uri,
+            'prefLabel': pref_label or "",
+            'definition': definition or "",
+            'broader': broader,
+            'inScheme': in_scheme
         })
     return concepts
 
@@ -110,15 +110,15 @@ def _load_from_csv(file_path, lang="en"):
         for row in reader:
             # Normalize field names by stripping whitespace
             row = {k.strip(): v for k, v in row.items()}
-            pref_label = _extract_label_by_language(row.get('skos:prefLabel', '').strip(), lang)
-            definition = _extract_label_by_language(row.get('skos:definition', '').strip(), lang)
+            pref_label = _extract_label_by_language(row.get('prefLabel', '').strip(), lang)
+            definition = _extract_label_by_language(row.get('definition', '').strip(), lang)
 
             concepts.append({
-                'skos:Concept': row.get('skos:Concept', '').strip(),
-                'skos:prefLabel': pref_label,
-                'skos:definition': definition,
-                'skos:broader': row.get('skos:broader', '').strip(),
-                'skos:inScheme': row.get('skos:inScheme', '').strip()
+                'concept': row.get('concept', '').strip(),
+                'prefLabel': pref_label,
+                'definition': definition,
+                'broader': row.get('broader', '').strip(),
+                'inScheme': row.get('inScheme', '').strip()
             })
     return concepts
 
@@ -162,7 +162,7 @@ def convert_to_delimited_text_layer(concepts, scheme_uri, lang="en"):
     """
     # Create a temporary CSV file — ensure it's fully written
     temp_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='')
-    fieldnames = ['skos:Concept', 'skos:prefLabel', 'skos:definition', 'skos:broader', 'skos:inScheme']
+    fieldnames = ['concept', 'prefLabel', 'definition', 'broader', 'inScheme']
 
     # Use QUOTE_ALL to ensure fields with | or commas are safely quoted
     writer = csv.DictWriter(temp_csv, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)

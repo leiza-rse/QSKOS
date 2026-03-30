@@ -22,8 +22,8 @@ def build_concept_tree_from_layer(vocab_layer, lang="en"):
 
     # First pass: create all items
     for feature in vocab_layer.getFeatures():
-        concept_uri = feature['skos:Concept']
-        label = feature['skos:prefLabel']  # Already filtered by language during load
+        concept_uri = feature['concept']
+        label = feature['prefLabel']  # Already filtered by language during load
         item = QTreeWidgetItem([label])
         item.setData(0, Qt.UserRole, concept_uri)  # Store URI in UserRole
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
@@ -32,8 +32,8 @@ def build_concept_tree_from_layer(vocab_layer, lang="en"):
 
     # Second pass: build hierarchy
     for feature in vocab_layer.getFeatures():
-        concept_uri = feature['skos:Concept']
-        broader_uri = feature['skos:broader']
+        concept_uri = feature['concept']
+        broader_uri = feature['broader']
         item = concepts[concept_uri]
 
         if broader_uri and broader_uri in concepts:
@@ -58,9 +58,9 @@ def build_hierarchy_index(vocab_layer):
     children_map[None] = []
 
     for feat in vocab_layer.getFeatures():
-        uri = feat['skos:Concept']
-        broader = feat['skos:broader'] or None  # Treat empty string as None
-        label = feat['skos:prefLabel']
+        uri = feat['concept']
+        broader = feat['broader'] or None  # Treat empty string as None
+        label = feat['prefLabel']
 
         concept_labels[uri] = label
 

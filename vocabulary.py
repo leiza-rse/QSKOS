@@ -143,8 +143,8 @@ class VocabularyManager:
         """Try to extract scheme URI from data, or prompt user."""
         # Try to get from first concept's inScheme
         for c in concepts:
-            if c.get('skos:inScheme'):
-                return c['skos:inScheme']
+            if c.get('inScheme'):
+                return c['inScheme']
 
         # Fallback: use source as scheme (for CSV or URL)
         default_scheme = source_hint if source_hint else "http://example.org/scheme/unknown"
