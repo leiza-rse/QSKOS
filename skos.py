@@ -1,16 +1,12 @@
 # skos.py
 # qskos QGIS Plugin - SKOS Parsing Utilities
-# Handles RDF/CSV parsing and returns normalized concept dicts.
+# Loads RDF/CSV sources and returns normalised concept dicts.
+# Storage to GeoPackage is handled by gpkg.import_vocab_to_gpkg.
 
 import csv
-from qgis.core import QgsVectorLayer, QgsFeature, QgsField, QgsProject, QgsFeatureRequest
-from PyQt5.QtCore import QVariant
-import tempfile
-import os
 
-# Try to import rdflib. If not available, some functions will not work.
 try:
-    from rdflib import Graph, URIRef, Literal
+    from rdflib import Graph, Literal
     from rdflib.namespace import SKOS
     RDFLIB_AVAILABLE = True
 except ImportError:
@@ -19,15 +15,19 @@ except ImportError:
 
 def load_skos_source(source_path_or_url, source_type, lang="en"):
     """
-    Load SKOS data from RDF or CSV source.
-    Returns a list of dicts with keys: 'concept', 'prefLabel', 'definition', 'broader', 'inScheme'
+    Load SKOS data from an RDF or CSV source.
+
+    Returns a list of dicts with keys:
+        concept, prefLabel, definition, broader, inScheme
+
     Language preference is applied to prefLabel and definition.
+    source_type: 'ttl' | 'jsonld' | 'url' | 'csv'
     """
-    if source_type in ['ttl', 'jsonld', 'url']:
+    if source_type in ("ttl", "jsonld", "url"):
         if not RDFLIB_AVAILABLE:
             raise ImportError("rdflib is required to load RDF sources.")
         return _load_from_rdf(source_path_or_url, source_type, lang)
-    elif source_type == 'csv':
+    elif source_type == "csv":
         return _load_from_csv(source_path_or_url, lang)
     else:
         raise ValueError(f"Unsupported source type: {source_type}")
@@ -38,42 +38,36 @@ def _load_from_rdf(source, source_format, lang="en"):
     g = Graph()
     g.parse(source, format=source_format)
 
-    # Collect unique concept subjects from both inScheme and topConceptOf
-    seen_concepts = []
-    for p in [SKOS.inScheme, SKOS.topConceptOf]:
-        for s in g.subjects(p, None):
-            if s not in seen_concepts:
-                seen_concepts.append(s)
+    seen = []
+    for predicate in (SKOS.inScheme, SKOS.topConceptOf):
+        for s in g.subjects(predicate, None):
+            if s not in seen:
+                seen.append(s)
 
-    # Build concept dictionaries
     concepts = []
-    for concept in seen_concepts:
-        concept_uri = str(concept)
-        pref_label = _get_preferred_literal(g, concept, SKOS.prefLabel, lang)
-        definition = _get_preferred_literal(g, concept, SKOS.definition, lang)
+    for concept in seen:
         broader = None
         for b in g.objects(concept, SKOS.broader):
             broader = str(b)
-            break  # Take first broader for simplicity
+            break
         in_scheme = None
         for s in g.objects(concept, SKOS.inScheme):
             in_scheme = str(s)
             break
-
         concepts.append({
-            'concept': concept_uri,
-            'prefLabel': pref_label or "",
-            'definition': definition or "",
-            'broader': broader,
-            'inScheme': in_scheme
+            "concept":    str(concept),
+            "prefLabel":  _get_preferred_literal(g, concept, SKOS.prefLabel, lang) or "",
+            "definition": _get_preferred_literal(g, concept, SKOS.definition, lang) or "",
+            "broader":    broader,
+            "inScheme":   in_scheme,
         })
     return concepts
 
 
 def _get_preferred_literal(graph, subject, predicate, preferred_lang="en"):
     """
-    Get the best literal for a predicate: preferred_lang > 'en' > any other > first available.
-    Returns plain string (no language tag).
+    Return the best literal value for a predicate:
+    preferred_lang > 'en' > any tagged > untagged > first available.
     """
     candidates = []
     for obj in graph.objects(subject, predicate):
@@ -82,120 +76,68 @@ def _get_preferred_literal(graph, subject, predicate, preferred_lang="en"):
         else:
             candidates.append((str(obj), None))
 
-    # Priority: preferred_lang > 'en' > any with lang > any without lang > first
-    for cand_text, cand_lang in candidates:
-        if cand_lang == preferred_lang:
-            return cand_text
-
-    for cand_text, cand_lang in candidates:
-        if cand_lang == "en":
-            return cand_text
-
-    for cand_text, cand_lang in candidates:
-        if cand_lang is not None:
-            return cand_text
-
-    for cand_text, cand_lang in candidates:
-        if cand_lang is None:
-            return cand_text
-
+    for priority in (preferred_lang, "en"):
+        for text, lang in candidates:
+            if lang == priority:
+                return text
+    for text, lang in candidates:
+        if lang is not None:
+            return text
+    for text, lang in candidates:
+        if lang is None:
+            return text
     return candidates[0][0] if candidates else ""
 
 
 def _load_from_csv(file_path, lang="en"):
-    """Load SKOS concepts from a CSV file. Assumes pipe-separated multilingual fields."""
+    """
+    Load SKOS concepts from a CSV file.
+
+    Expected columns: concept, prefLabel, definition, broader, inScheme
+    prefLabel and definition may be pipe-separated multilingual strings
+    (e.g. "Reinigung@de|Cleaning@en").
+    """
     concepts = []
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Normalize field names by stripping whitespace
             row = {k.strip(): v for k, v in row.items()}
-            pref_label = _extract_label_by_language(row.get('prefLabel', '').strip(), lang)
-            definition = _extract_label_by_language(row.get('definition', '').strip(), lang)
-
             concepts.append({
-                'concept': row.get('concept', '').strip(),
-                'prefLabel': pref_label,
-                'definition': definition,
-                'broader': row.get('broader', '').strip(),
-                'inScheme': row.get('inScheme', '').strip()
+                "concept":    row.get("concept", "").strip(),
+                "prefLabel":  _extract_label_by_language(
+                                  row.get("prefLabel", "").strip(), lang),
+                "definition": _extract_label_by_language(
+                                  row.get("definition", "").strip(), lang),
+                "broader":    row.get("broader", "").strip() or None,
+                "inScheme":   row.get("inScheme", "").strip() or None,
             })
     return concepts
 
 
 def _extract_label_by_language(label_str, lang="en"):
     """
-    Extract label for given language from pipe-separated "label@lang" string.
-    Fallback: en > any tagged > first untagged > first overall.
+    Extract the label for a given language from a pipe-separated
+    'label@lang|label@lang' string.
+
+    Fallback order: selected lang > en > any tagged > plain text > first part.
     """
     if not label_str:
         return ""
 
-    parts = label_str.split('|')
-    lang_map = {}
-    plain_labels = []
+    parts = label_str.split("|")
+    lang_map, plain = {}, []
 
     for part in parts:
-        if '@' in part:
-            txt, l = part.rsplit('@', 1)
+        if "@" in part:
+            txt, l = part.rsplit("@", 1)
             lang_map[l] = txt
         else:
-            plain_labels.append(part)
+            plain.append(part)
 
-    # Priority: selected lang > en > any lang > plain > first
     if lang in lang_map:
         return lang_map[lang]
     if "en" in lang_map:
         return lang_map["en"]
     if lang_map:
         return next(iter(lang_map.values()))
-    if plain_labels:
-        return plain_labels[0]
-    return parts[0]
-
-
-def convert_to_delimited_text_layer(concepts, scheme_uri, lang="en"):
-    """
-    Convert a list of concept dicts into a QGIS delimited text layer.
-    Stores only the selected language's prefLabel and definition.
-    Returns the created QgsVectorLayer.
-    """
-    # Create a temporary CSV file — ensure it's fully written
-    temp_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='')
-    fieldnames = ['concept', 'prefLabel', 'definition', 'broader', 'inScheme']
-
-    # Use QUOTE_ALL to ensure fields with | or commas are safely quoted
-    writer = csv.DictWriter(temp_csv, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-    writer.writeheader()
-    for concept in concepts:
-        writer.writerow(concept)
-    temp_csv.close()  # IMPORTANT: Close file so QGIS can read it
-
-    # Build URI with explicit delimiter and quoting — disable detectTypes
-    uri = (
-        f"file:///{temp_csv.name}"
-        "?type=csv"
-        "&noGeometry=yes"
-        "&crs=EPSG:4326"
-        "&subsetIndex=no"
-        "&watchFile=no"
-        "&delimiter=,"           # Explicitly set delimiter
-        "&quote=\\\""            # Escape quote char for URI
-        "&skipEmptyFields=yes"
-        "&trimFields=yes"
-        # REMOVED: &detectTypes=yes — causes parsing failures
-    )
-
-    layer_name = scheme_uri.split('/')[-1] if '/' in scheme_uri else scheme_uri
-
-    layer = QgsVectorLayer(uri, layer_name, "delimitedtext")
-    if not layer.isValid():
-        raise Exception(f"Failed to create delimited text layer from CSV: {layer.error().message()}")
-
-    # Set custom properties
-    layer.setCustomProperty("qskos:scheme", scheme_uri)
-    layer.setCustomProperty("qskos:language", lang)
-
-    # Add to project
-    QgsProject.instance().addMapLayer(layer)
-    return layer
+    return plain[0] if plain else parts[0]
