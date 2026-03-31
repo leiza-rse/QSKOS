@@ -98,7 +98,7 @@ class GeopackageManager:
 
     def refresh_vocab_list(self):
         """Repopulate the vocabulary list from the active GPKG config table."""
-        if not self.vocab_list_widget:
+        if self.vocab_list_widget is None:
             return
         self.vocab_list_widget.clear()
 
