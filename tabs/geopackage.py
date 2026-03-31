@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QListWidget, QListWidgetItem, QFileDialog
 )
 
-from .gpkg import ensure_config_table, get_vocab_entries
+from ..utils.gpkg import ensure_config_table, get_vocab_entries
 
 
 class GeopackageManager:

@@ -14,12 +14,12 @@ from qgis.core import (
 )
 from qgis.gui import QgsMapLayerComboBox
 
-from .hierarchy import (
+from ..utils.hierarchy import (
     build_concept_tree_from_layer,
     get_filtered_descendant_uris_fast,
 )
-from .fields import parse_field_value
-from .gpkg import (
+from ..utils.fields import parse_field_value
+from ..utils.gpkg import (
     read_config, get_vocab_entries, get_bound_vocab_schemes,
     find_vocab_table_for_scheme, bind_feature_to_vocab,
     unbind_feature_from_vocab, ensure_vocab_layer_loaded,

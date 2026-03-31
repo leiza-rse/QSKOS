@@ -9,8 +9,8 @@ from PyQt5.QtWidgets import (
     QFileDialog, QLabel, QMessageBox, QInputDialog
 )
 
-from .skos import load_skos_source
-from .gpkg import (
+from ..utils.skos import load_skos_source
+from ..utils.gpkg import (
     import_vocab_to_gpkg,
     ensure_vocab_layer_loaded,
     scheme_exists_in_gpkg,

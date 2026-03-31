@@ -8,11 +8,11 @@ from PyQt5.QtWidgets import QAction, QDockWidget, QTabWidget
 from PyQt5.QtCore import Qt, QTimer
 from qgis.core import QgsProject
 
-from .geopackage import GeopackageManager
-from .vocabulary import VocabularyManager
-from .layer import LayerManager
-from .symbology import SymbologyManager
-from .hierarchy import build_hierarchy_index
+from .tabs.geopackage import GeopackageManager
+from .tabs.vocabulary import VocabularyManager
+from .tabs.layer import LayerManager
+from .tabs.symbology import SymbologyManager
+from .utils.hierarchy import build_hierarchy_index
 
 
 class qskos:

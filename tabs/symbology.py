@@ -14,9 +14,9 @@ from qgis.core import (
     QgsRuleBasedRenderer, QgsSymbol, QgsWkbTypes, QgsSingleSymbolRenderer
 )
 
-from .hierarchy import get_descendant_uris_fast, get_filtered_descendant_uris_fast
-from .fields import parse_field_value
-from .gpkg import (
+from ..utils.hierarchy import get_descendant_uris_fast, get_filtered_descendant_uris_fast
+from ..utils.fields import parse_field_value
+from ..utils.gpkg import (
     get_bound_vocab_schemes, find_vocab_table_for_scheme,
     ensure_vocab_layer_loaded, layer_table_name,
 )
