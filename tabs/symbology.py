@@ -158,6 +158,7 @@ class SymbologyManager:
             if uri in combined_concept_labels
         ]
 
+
         if not annotation_field_uris:
             QMessageBox.warning(None, "No Annotations",
                 "No annotation fields found matching any bound vocabulary.\n"
@@ -165,11 +166,14 @@ class SymbologyManager:
             return
 
         # uri → broader lookup for ancestor walking
-        uri_to_broader = {
-            child: parent
-            for parent, children in combined_children_map.items()
-            for child in children
-        }
+        # Use a dictionary that preserves all parent relationships by using lists
+        uri_to_broader = {}
+        for parent, children in combined_children_map.items():
+            for child in children:
+                if child not in uri_to_broader:
+                    uri_to_broader[child] = []
+                if parent not in uri_to_broader[child]:
+                    uri_to_broader[child].append(parent)
 
         field_to_descendants = {
             field_uri: set(
@@ -198,8 +202,12 @@ class SymbologyManager:
                 ancestors, visited, current = [], set(), uri
                 while current and current != _field_uri and current not in visited:
                     visited.add(current)
-                    parent = uri_to_broader.get(current)
-                    if not parent or parent == current:
+                    parents = uri_to_broader.get(current, [])
+                    if not parents:
+                        break
+                    # Use the first parent found (maintains original behavior for single-parent cases)
+                    parent = parents[0]
+                    if parent == current:
                         break
                     ancestors.append(parent)
                     if parent == _field_uri:
