@@ -1,7 +1,7 @@
 [general]
-name=qskosdev
+name=qskos
 description=Semantic annotation of vector features using SKOS vocabularies
 version=1.0
-qgisMinimumVersion=3.16
-author=Your Name
-email=your.email@example.com
+qgisMinimumVersion=3.44
+author= Lasse Mempel-Länger, Anja Cramer, Kristina Fischer, Ingrid Stelzner, Benjamin Streubel, Nico Wende, Florian Thiery, Allard Mees
+email=lasse.mempellaenger@leiza.de
