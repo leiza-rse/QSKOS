@@ -38,7 +38,6 @@ class VocabularyManager:
             "Local Turtle (.ttl)",
             "Local JSON-LD (.jsonld)",
             "Local CSV (.csv)",
-            "Remote URL (Turtle/JSON-LD)",
         ])
         layout.addRow("Source Type:", self.source_type_combo)
 
@@ -49,7 +48,7 @@ class VocabularyManager:
         layout.addRow("Language:", self.language_combo)
 
         self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("Enter file path or URL…")
+        self.source_input.setPlaceholderText("Enter file path…")
         layout.addRow("Source:", self.source_input)
 
         browse_btn = QPushButton("Browse…")
@@ -108,10 +107,10 @@ class VocabularyManager:
         source_text = self.source_input.text().strip()
         if not source_text:
             QMessageBox.warning(None, "Input Required",
-                "Please enter a file path or URL.")
+                "Please enter a file path.")
             return
 
-        source_type_map = {0: "ttl", 1: "jsonld", 2: "csv", 3: "url"}
+        source_type_map = {0: "ttl", 1: "jsonld", 2: "csv"}
         source_type = source_type_map.get(
             self.source_type_combo.currentIndex(), "ttl"
         )

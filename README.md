@@ -58,9 +58,9 @@ The plugin is designed for researchers who need to:
 
 #### 2. Import Vocabularies
 - Go to the "Vocabulary" tab
-- Select your source type (Turtle, JSON-LD, CSV, or URL)
+- Select your source type (Turtle, JSON-LD, or CSV)
 - Choose the language (German or English)
-- Select your vocabulary file or enter URL
+- Select your vocabulary file
 - Click "Load into GeoPackage"
 - The vocabulary will be stored as a table in your GeoPackage
 
