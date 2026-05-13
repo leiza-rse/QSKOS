@@ -1,5 +1,14 @@
 # QSKOS Plugin - Semantic Annotation for QGIS
 
+## Installation
+
+To install the QSKOS plugin in QGIS:
+
+1. **Download the plugin**: Click on the green "<> Code" button on the GitHub repository page and select "Download ZIP" from the popout menu.
+2. **Install in QGIS**: In QGIS, go to Plugins → Manage and Install Plugins → Install From Zip.
+3. **Select the ZIP file**: In the file picker, navigate to and select the downloaded ZIP file.
+4. **Complete installation**: Click on "Install Plugin" and accept the security warning by clicking "Yes".
+
 ## What is QSKOS?
 
 QSKOS is a QGIS plugin that enables semantic annotation of geographic features using controlled vocabularies. It allows you to add meaningful, standardized labels and descriptions to your vector data layers, with all data stored directly in GeoPackage files.
