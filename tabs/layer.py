@@ -507,13 +507,6 @@ class LayerManager:
         )
         feature_layer.setFieldAlias(field_index, label)
 
-        # Check if the layer is in editing mode and commit if needed
-        if feature_layer.isEditable():
-            feature_layer.commitChanges()
-        else:
-            feature_layer.startEditing()
-            feature_layer.commitChanges()
-
     # ── Annotation field creation ──────────────────────────────────────────────
 
     def create_annotation_field(self, concept_uri, label):
@@ -533,7 +526,7 @@ class LayerManager:
 
         field_index = layer.fields().lookupField(concept_uri)
         layer.setDefaultValueDefinition(
-            field_index, QgsDefaultValue("array()", True)
+            field_index, QgsDefaultValue("array()", False)
         )
 
         # ValueRelation filter: descendants of concept_uri, excluding itself
