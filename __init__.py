@@ -3,6 +3,14 @@
 # Initialises the dock widget, wires all tabs, manages cross-tab state.
 
 import os
+import sys
+
+# Make bundled pure-Python dependencies (e.g. rdflib) importable.
+# These live in the plugin's libs/ folder so users don't need pip.
+_PLUGIN_DIR = os.path.dirname(__file__)
+_LIBS_DIR = os.path.join(_PLUGIN_DIR, "libs")
+if os.path.isdir(_LIBS_DIR) and _LIBS_DIR not in sys.path:
+    sys.path.insert(0, _LIBS_DIR)
 
 from PyQt5.QtWidgets import QAction, QDockWidget, QTabWidget
 from PyQt5.QtCore import Qt, QTimer
