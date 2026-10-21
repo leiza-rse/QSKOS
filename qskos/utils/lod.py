@@ -1,7 +1,8 @@
 # lod.py
 # qskos QGIS Plugin - Linked Open Data Export Utilities
 # Builds an rdflib Graph from annotated features and serialises it as Turtle.
-# Pure data logic — no tab logic lives here.
+# PURE — no QGIS imports. The QGIS feature/geometry extraction that feeds this
+# module lives in utils/layers.py (extract_layer_spec).
 #
 # Data model (per feature):
 #   <obj> rdf:type crm:E19_Physical_Object
@@ -19,10 +20,6 @@ import re
 
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, RDFS
-
-from qgis.core import QgsWkbTypes
-
-from .fields import parse_field_value
 
 # ─── Namespace constants (match context/example.ttl) ─────────────────────────
 
@@ -48,13 +45,12 @@ def _ensure_trailing(s):
     return s
 
 
-def _ogc_crs_uri(crs):
-    """Return the OGC CRS URI for an EPSG-based CRS, else None.
+def ogc_crs_uri(authid):
+    """Return the OGC CRS URI for an EPSG auth id, else None.
 
     e.g. 'EPSG:4326' → 'http://www.opengis.net/def/crs/EPSG/0/4326'
     """
-    authid = crs.authid() if crs else ""
-    if authid.startswith("EPSG:"):
+    if authid and authid.startswith("EPSG:"):
         try:
             code = int(authid.split(":", 1)[1])
             return f"http://www.opengis.net/def/crs/EPSG/0/{code}"
@@ -63,27 +59,32 @@ def _ogc_crs_uri(crs):
     return None
 
 
-def _sf_class(geom):
-    """Map a QgsGeometry to the matching sf: geometry class."""
-    is_multi = geom.isMultipart()
-    geom_type = geom.type()
-    if geom_type == QgsWkbTypes.PolygonGeometry:
-        return NS_SF.MultiPolygon if is_multi else NS_SF.Polygon
-    if geom_type == QgsWkbTypes.PointGeometry:
-        return NS_SF.MultiPoint if is_multi else NS_SF.Point
-    if geom_type == QgsWkbTypes.LineGeometry:
-        return NS_SF.MultiLineString if is_multi else NS_SF.LineString
-    return NS_SF.Geometry
+def sf_class_from_names(geom_type, is_multi):
+    """
+    Map a geometry type name ('Polygon' | 'Point' | 'Line' | ...) and the
+    multipart flag to the matching sf: geometry class name. Returns a string
+    such as 'Polygon' or 'MultiPolygon', or 'Geometry' for unknown types.
+    """
+    if geom_type == "Polygon":
+        return "MultiPolygon" if is_multi else "Polygon"
+    if geom_type == "Point":
+        return "MultiPoint" if is_multi else "Point"
+    if geom_type == "Line":
+        return "MultiLineString" if is_multi else "LineString"
+    return "Geometry"
 
 
-def _wkt_literal(geom, crs):
+def _sf_uriref(name):
+    """Resolve an sf: geometry class name to a URIRef."""
+    return NS_SF[name]
+
+
+def _wkt_literal(wkt, crs_uri):
     """Return a GeoSPARQL WKT literal, embedding the CRS URI when resolvable.
 
     e.g. '<http://www.opengis.net/def/crs/EPSG/0/4326> POLYGON ((...))'
          ^^geosparql:wktLiteral
     """
-    wkt = str(geom.asWkt())
-    crs_uri = _ogc_crs_uri(crs)
     text = f"<{crs_uri}> {wkt}" if crs_uri else wkt
     return Literal(text, datatype=NS_GEOSPARQL.wktLiteral)
 
@@ -98,8 +99,6 @@ def derive_prefix(scheme_uri):
 def _is_uri(s):
     return s.startswith("http://") or s.startswith("https://")
 
-
-# ─── Graph construction ───────────────────────────────────────────────────────
 
 def _resolve_class(class_ref):
     """Resolve a user-provided CRM class reference to a URIRef.
@@ -121,28 +120,33 @@ def _resolve_class(class_ref):
     return NS_CRM[ref]
 
 
+# ─── Graph construction ───────────────────────────────────────────────────────
+
 def build_lod_graph(layer_specs, object_namespace=None, vocab_prefixes=None):
     """
     Build the LOD graph for annotations found across several feature layers.
 
     object_namespace — the institution's object namespace, applied to every
-        layer's Object ID. Defaults to DEFAULT_OBJECT_NAMESPACE. The
-        annotation (feature) namespace is always the plugin default.
+        layer's Object ID. Defaults to DEFAULT_OBJECT_NAMESPACE.
 
-    Each spec in layer_specs describes one object and its annotation fields:
+    Each spec in layer_specs describes one object:
         {
-            "layer":             QgsVectorLayer,
-            "annotation_fields": [field names that are concept URIs, …],
-            "object_id":         str (appended to object_namespace),
-            "object_label":      str,
-            "object_type":       str (CRM class ref, default crm:E19_Physical_Object),
+            "object_id":    str,
+            "object_label": str,
+            "object_type":  str (CRM class ref, default crm:E19_Physical_Object),
+            "features":     [
+                {
+                    "values":  {field_name: [concept_uri, ...]},
+                    "wkt":     str or None,
+                    "crs_uri": str or None,
+                    "sf_class": "Polygon" | "MultiPolygon" | ... or None,
+                }, ...
+            ],
         }
 
-    Field values (lists of concept URIs) become oa:hasTarget; the field name
-    (parent concept) becomes oa:motivatedBy.
-
-    Layers sharing the same object_id produce the same subject URI, so
-    RDFlib merges (deduplicates) their triples automatically.
+    Field names (parent concepts) become oa:motivatedBy; selected concept
+    values become oa:hasTarget. Layers sharing the same object_id produce the
+    same subject URI, so RDFlib merges their triples automatically.
 
     Returns (graph, n_features_exported).
     """
@@ -170,31 +174,16 @@ def build_lod_graph(layer_specs, object_namespace=None, vocab_prefixes=None):
         if not object_id:
             continue  # skip layers with no object ID
 
-        layer = spec["layer"]
-        annotation_fields = spec["annotation_fields"]
-
         obj_uri = URIRef(object_id) if _is_uri(object_id) else obj_ns[object_id]
         g.add((obj_uri, RDF.type, _resolve_class(spec.get("object_type"))))
         if spec.get("object_label"):
             g.add((obj_uri, RDFS.label, Literal(spec["object_label"])))
 
-        fields = layer.fields()
-        crs = layer.crs()
-
-        for feat in layer.getFeatures():
-            # Collect non-empty annotation values for this feature
-            values_by_field = {}
-            for field_name in annotation_fields:
-                fidx = fields.lookupField(field_name)
-                if fidx == -1:
-                    continue
-                values = parse_field_value(feat[fidx])
-                if values:
-                    values_by_field[field_name] = values
+        for feat in spec.get("features", []):
+            values_by_field = feat.get("values", {})
             if not values_by_field:
                 continue
 
-            # One annotation node per annotation field
             for field_name, values in values_by_field.items():
                 counter += 1
                 ann_uri = ann_ns[f"feat_{counter}"]
@@ -215,11 +204,12 @@ def build_lod_graph(layer_specs, object_namespace=None, vocab_prefixes=None):
                     g.add((ann_uri, NS_OA.hasTarget, URIRef(value)))
 
                 # Geometry per annotation node
-                geom = feat.geometry()
-                if geom and not geom.isNull() and not geom.isEmpty():
+                wkt = feat.get("wkt")
+                if wkt:
                     g.add((ann_uri, NS_GEOSPARQL.hasGeometry, geom_uri))
-                    g.add((geom_uri, RDF.type, _sf_class(geom)))
-                    g.add((geom_uri, NS_GEOSPARQL.asWKT, _wkt_literal(geom, crs)))
+                    g.add((geom_uri, RDF.type, _sf_uriref(feat["sf_class"])))
+                    g.add((geom_uri, NS_GEOSPARQL.asWKT,
+                           _wkt_literal(wkt, feat.get("crs_uri"))))
 
             n_features += 1
 

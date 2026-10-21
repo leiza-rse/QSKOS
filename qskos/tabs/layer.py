@@ -20,9 +20,11 @@ from ..utils.annotation import (
 from ..utils.gpkg import (
     read_config, get_vocab_entries, get_bound_vocab_schemes,
     find_vocab_table_for_scheme, bind_feature_to_vocab,
-    unbind_feature_from_vocab, ensure_vocab_layer_loaded,
-    layer_gpkg_path, layer_table_name, norm_path,
+    unbind_feature_from_vocab, norm_path,
     ROLE_VOCAB,
+)
+from ..utils.layers import (
+    ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name,
 )
 
 

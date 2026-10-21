@@ -18,6 +18,8 @@ from ..utils.hierarchy import get_descendant_uris_fast, get_filtered_descendant_
 from ..utils.fields import parse_field_value
 from ..utils.gpkg import (
     get_bound_vocab_schemes, find_vocab_table_for_scheme,
+)
+from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_table_name,
 )
 

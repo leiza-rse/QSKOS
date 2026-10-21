@@ -25,8 +25,11 @@ from ..utils.lod import (
 )
 from ..utils.gpkg import (
     get_vocab_entries, read_config, ROLE_VOCAB,
-    find_vocab_table_for_scheme, ensure_vocab_layer_loaded,
-    layer_gpkg_path, layer_table_name, norm_path,
+    find_vocab_table_for_scheme, norm_path,
+)
+from ..utils.layers import (
+    ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name,
+    extract_layer_spec,
 )
 
 # Common CIDOC CRM classes offered in the (editable) class dropdown
@@ -261,13 +264,11 @@ class LODExportManager:
         object_id = form["id_widget"].text().strip()
         if not object_id:
             return None
-        return {
-            "layer":             form["layer"],
-            "annotation_fields": form["annotation_fields"],
-            "object_id":         object_id,
-            "object_label":      form["label_widget"].text().strip(),
-            "object_type":       form["class_widget"].currentText().strip(),
-        }
+        return extract_layer_spec(
+            form["layer"], form["annotation_fields"], object_id,
+            form["label_widget"].text().strip(),
+            form["class_widget"].currentText().strip(),
+        )
 
     # ── UI callbacks ───────────────────────────────────────────────────────────
 
@@ -291,13 +292,10 @@ class LODExportManager:
         if not path.endswith(".ttl"):
             path += ".ttl"
 
-        spec = {
-            "layer":             layer,
-            "annotation_fields": annotation_fields,
-            "object_id":         object_id,
-            "object_label":      label_input.text().strip(),
-            "object_type":       class_combo.currentText().strip(),
-        }
+        spec = extract_layer_spec(
+            layer, annotation_fields, object_id,
+            label_input.text().strip(), class_combo.currentText().strip(),
+        )
         try:
             n = export_lod_ttl(
                 path, [spec], object_namespace, self._vocab_prefixes()

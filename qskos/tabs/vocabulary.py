@@ -12,10 +12,10 @@ from PyQt5.QtWidgets import (
 from ..utils.skos import load_skos_source
 from ..utils.gpkg import (
     import_vocab_to_gpkg,
-    ensure_vocab_layer_loaded,
     scheme_exists_in_gpkg,
     get_vocab_entries,
 )
+from ..utils.layers import ensure_vocab_layer_loaded
 
 
 class VocabularyManager:
