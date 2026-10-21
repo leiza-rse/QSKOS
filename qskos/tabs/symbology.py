@@ -186,18 +186,29 @@ class SymbologyManager:
 
         root_rule = QgsRuleBasedRenderer.Rule(None)
 
+        # Single pass over features: collect which concept URIs are present in
+        # each annotation field, so we don't re-read the layer once per field.
+        field_present_uris = {
+            uri: set() for uri in annotation_field_uris
+            if layer.fields().lookupField(uri) != -1
+        }
+        for feat in layer.getFeatures():
+            for field_uri in field_present_uris:
+                values = parse_field_value(feat[field_uri])
+                if values:
+                    field_present_uris[field_uri].update(values)
+
         for field_uri in annotation_field_uris:
             field_label = combined_concept_labels.get(field_uri, field_uri)
             if layer.fields().lookupField(field_uri) == -1:
                 continue
 
             # Collect URIs actually present in this field across all features
-            directly_annotated = set()
-            valid_descendants   = field_to_descendants[field_uri]
-            for feat in layer.getFeatures():
-                for uri in parse_field_value(feat[field_uri]):
-                    if uri in valid_descendants:
-                        directly_annotated.add(uri)
+            valid_descendants = field_to_descendants[field_uri]
+            directly_annotated = {
+                uri for uri in field_present_uris.get(field_uri, set())
+                if uri in valid_descendants
+            }
 
             # Walk up to collect ancestor concepts between leaf and field root
             def get_ancestors(uri, _field_uri=field_uri):

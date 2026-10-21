@@ -32,6 +32,18 @@ def norm_path(p):
     return os.path.normcase(os.path.normpath(p)) if p else ""
 
 
+def gpkg_path_from_source(src):
+    """Extract the GPKG file path from an OGR layer source string (pure)."""
+    return src.split("|")[0] if "|" in src else src
+
+
+def table_name_from_source(src):
+    """Extract the table name from an OGR layer source string (pure)."""
+    if "|layername=" in src:
+        return src.split("|layername=")[-1].split("|")[0]
+    return ""
+
+
 def _safe_table_name(scheme_uri):
     """Derive a valid SQLite identifier from a scheme URI's last path segment."""
     name = scheme_uri.rstrip("/").split("/")[-1]

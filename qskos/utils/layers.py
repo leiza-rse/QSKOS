@@ -8,23 +8,22 @@
 
 from qgis.core import QgsVectorLayer, QgsProject, QgsWkbTypes
 
-from .gpkg import norm_path, INTERNAL_GROUP
+from .gpkg import (
+    norm_path, INTERNAL_GROUP,
+    gpkg_path_from_source, table_name_from_source,
+)
 from .fields import parse_field_value
 from .lod import ogc_crs_uri, sf_class_from_names
 
 
 def layer_gpkg_path(layer):
     """Extract the GPKG file path from an OGR layer's source string."""
-    src = layer.source()
-    return src.split("|")[0] if "|" in src else src
+    return gpkg_path_from_source(layer.source())
 
 
 def layer_table_name(layer):
     """Extract the table name from an OGR layer's source string."""
-    src = layer.source()
-    if "|layername=" in src:
-        return src.split("|layername=")[-1].split("|")[0]
-    return ""
+    return table_name_from_source(layer.source())
 
 
 def ensure_vocab_layer_loaded(gpkg_path, table_name):

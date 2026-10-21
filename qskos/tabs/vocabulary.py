@@ -156,6 +156,10 @@ class VocabularyManager:
                 self.plugin.state.selected_language,
                 self.plugin.state.active_gpkg_path,
             )
+            # The table was replaced — drop any cached hierarchy for it.
+            self.plugin.state.invalidate_vocab_cache(
+                self.plugin.state.active_gpkg_path, table_name
+            )
             # Load the new table into the project so ValueRelation can reference it
             ensure_vocab_layer_loaded(self.plugin.state.active_gpkg_path, table_name)
 
