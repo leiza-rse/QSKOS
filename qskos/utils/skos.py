@@ -7,7 +7,7 @@ import csv
 
 try:
     from rdflib import Graph, Literal
-    from rdflib.namespace import SKOS
+    from rdflib.namespace import RDF, SKOS
     RDFLIB_AVAILABLE = True
 except ImportError:
     RDFLIB_AVAILABLE = False
@@ -75,29 +75,42 @@ def _load_from_rdf(source, source_format, lang="en"):
     g = Graph()
     g.parse(source, format=fmt)
 
-    # Discover concept subjects: prefer explicit membership links, fall back
-    # to any subject with a prefLabel.
-    seen = []
-    for predicate in (SKOS.inScheme, SKOS.topConceptOf):
-        for s in g.subjects(predicate, None):
-            if s not in seen:
-                seen.append(s)
-    if not seen:
-        for s in g.subjects(SKOS.prefLabel, None):
-            if s not in seen:
-                seen.append(s)
+    # Discover concept subjects. Prefer subjects explicitly typed skos:Concept
+    # (avoids pulling in e.g. ConceptScheme nodes that carry a label); fall
+    # back to explicit membership links, then to any subject with a prefLabel
+    # as a last resort (covers JSON-LD that omits types and membership).
+    def _unique(subjects):
+        out = []
+        for s in subjects:
+            if s not in out:
+                out.append(s)
+        return out
 
-    # Build explicit broader relations; sources (mainly JSON-LD) that only
-    # model hierarchy via nested skos:narrower need those inverted instead.
+    seen = _unique(g.subjects(RDF.type, SKOS.Concept))
+    if not seen:
+        for predicate in (SKOS.inScheme, SKOS.topConceptOf):
+            seen.extend(
+                s for s in g.subjects(predicate, None) if s not in seen
+            )
+    if not seen:
+        seen = _unique(g.subjects(SKOS.prefLabel, None))
+
+    # Build explicit broader relations first.
     broader_map = {}
     for s in seen:
         for b in g.objects(s, SKOS.broader):
-            broader_map[s] = b
-            break
-    if not broader_map:
-        # Invert skos:narrower (parent -> child) into child -> parent.
-        for parent, child in g.subject_objects(SKOS.narrower):
-            broader_map.setdefault(child, parent)
+            broader_map.setdefault(s, b)
+
+    # For concepts that still have no broader, invert skos:narrower
+    # (parent -> child) per-concept. This handles mixed sources where some
+    # concepts use broader and others rely on narrower, without globally
+    # disabling the explicit broader relations.
+    narrower_inverted = {}
+    for parent, child in g.subject_objects(SKOS.narrower):
+        narrower_inverted.setdefault(child, parent)
+    for s in seen:
+        if s not in broader_map and s in narrower_inverted:
+            broader_map[s] = narrower_inverted[s]
 
     # inScheme: take it from the concept, or a scheme we can derive from the
     # top-level hasTopConcept/ConceptScheme node if the source omits it.

@@ -54,6 +54,35 @@ _JSONLD = """\
 }
 """
 
+# A mixed source: some concepts have explicit broader, others only rely on
+# nested narrower. The narrower-only child must still get its parent.
+_MIXED_TTL = """\
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex: <http://example.org/> .
+
+ex:scheme a skos:ConceptScheme .
+ex:root a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "Root"@en .
+ex:childA a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:broader ex:root ; skos:prefLabel "ChildA"@en .
+ex:childB a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "ChildB"@en .
+ex:root skos:narrower ex:childB .
+"""
+
+# A source whose ConceptScheme carries a label but is NOT typed skos:Concept.
+# It must not be treated as a concept (only typed concepts are).
+_SCHEME_LABEL_TTL = """\
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex: <http://example.org/> .
+
+ex:scheme a skos:ConceptScheme ;
+    skos:prefLabel "My Scheme"@en ;
+    skos:hasTopConcept ex:root .
+ex:root a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "Root"@en .
+"""
+
 
 def _write(tmpdir, name, content):
     path = os.path.join(tmpdir, name)
@@ -106,6 +135,27 @@ class TestRdfLoad:
         concepts = load_skos_source(path, "jsonld", lang="en")
         uris = {c["concept"] for c in concepts}
         assert uris == {"http://example.org/a", "http://example.org/b"}
+
+    def test_per_concept_narrower_fallback(self, tmpdir):
+        # childB has no broader but root:narrower childB — its parent must be
+        # recovered via per-concept inversion, while childA keeps its explicit
+        # broader.
+        path = _write(tmpdir, "mixed.ttl", _MIXED_TTL)
+        concepts = load_skos_source(path, "rdf", lang="en")
+        by_uri = {c["concept"]: c for c in concepts}
+        assert by_uri["http://example.org/childA"]["broader"] == \
+            "http://example.org/root"
+        assert by_uri["http://example.org/childB"]["broader"] == \
+            "http://example.org/root"
+
+    def test_scheme_not_treated_as_concept(self, tmpdir):
+        # The ConceptScheme carries a prefLabel but is not typed skos:Concept,
+        # so it must not be pulled in as a concept.
+        path = _write(tmpdir, "scheme.ttl", _SCHEME_LABEL_TTL)
+        concepts = load_skos_source(path, "rdf", lang="en")
+        uris = {c["concept"] for c in concepts}
+        assert uris == {"http://example.org/root"}
+        assert "http://example.org/scheme" not in uris
 
 
 class TestCsvLoad:

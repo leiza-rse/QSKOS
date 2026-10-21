@@ -8,8 +8,8 @@
 # All layers can be exported together into a single Turtle; layers using the
 # same object ID are merged automatically (same subject URI).
 #
-# Object namespace and annotation namespace use the plugin defaults and are
-# not user-configurable.
+# The object namespace is user-configurable (per-layer Object ID is appended to
+# it); the annotation (feature) namespace uses the plugin default.
 
 import os
 
