@@ -6,10 +6,10 @@ To install the QSKOS plugin in QGIS:
 
 1. **Download the plugin**: Click on the green "<> Code" button on the GitHub repository page and select "Download ZIP" from the popout menu.
 2. **Install in QGIS**: In QGIS, go to Plugins → Manage and Install Plugins → Install From Zip.
-3. **Select the ZIP file**: In the file picker, navigate to and select the downloaded ZIP file.
+3. **Select the ZIP file**: The plugin lives in the `qskos/` subdirectory. When zipping for QGIS, zip the **contents of `qskos/`** (so `metadata.txt` and `__init__.py` are at the root of the zip), not the whole repository.
 4. **Complete installation**: Click on "Install Plugin" and accept the security warning by clicking "Yes".
 
-The plugin bundles the pure-Python libraries it needs to read RDF vocabularies (rdflib and its dependencies) inside its `libs/` folder, so no manual `pip install` is required.
+The plugin bundles the pure-Python libraries it needs to read RDF vocabularies (rdflib and its dependencies) inside its `qskos/libs/` folder, so no manual `pip install` is required.
 
 ## What is QSKOS?
 

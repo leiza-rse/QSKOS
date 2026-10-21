@@ -521,12 +521,12 @@ class LayerManager:
 
         layer = self.plugin.current_feature_layer
         layer.startEditing()
-        layer.addAttribute(QgsField(concept_uri, QVariant.Map))
+        layer.addAttribute(QgsField(concept_uri, QVariant.String))
         layer.updateFields()
 
         field_index = layer.fields().lookupField(concept_uri)
         layer.setDefaultValueDefinition(
-            field_index, QgsDefaultValue("array()", False)
+            field_index, QgsDefaultValue("'[]'", False)
         )
 
         # ValueRelation filter: descendants of concept_uri, excluding itself
