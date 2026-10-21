@@ -4,7 +4,7 @@
 # Covers ALL vocabularies bound to the current feature layer automatically —
 # the user does not need to be viewing any particular vocab in the tree.
 
-import random
+import hashlib
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QMessageBox
@@ -73,11 +73,16 @@ class SymbologyManager:
         self.symbology_status_label.setText("✅ Symbology reset to default.")
         QMessageBox.information(None, "Reset", "Symbology reset to default.")
 
-    def random_color(self):
+    def _colour_for_uri(self, uri):
+        """
+        Deterministic colour derived from a concept URI, so regenerating the
+        symbology produces the same styling (reproducible, unlike random()).
+        """
+        h = int(hashlib.md5(uri.encode("utf-8")).hexdigest(), 16)
         return QColor(
-            random.randint(0, 255),
-            random.randint(0, 255),
-            random.randint(0, 255),
+            (h >> 16) & 0xFF,
+            (h >> 8) & 0xFF,
+            h & 0xFF,
         )
 
     def _default_symbol(self, geom_type):
@@ -210,22 +215,22 @@ class SymbologyManager:
                 if uri in valid_descendants
             }
 
-            # Walk up to collect ancestor concepts between leaf and field root
+            # Walk up to collect ALL ancestor concepts between leaf and field
+            # root, following every broader parent (polyhierarchy-safe).
             def get_ancestors(uri, _field_uri=field_uri):
-                ancestors, visited, current = [], set(), uri
-                while current and current != _field_uri and current not in visited:
+                ancestors, visited, frontier = set(), set(), [uri]
+                while frontier:
+                    current = frontier.pop()
+                    if current in visited or current == _field_uri:
+                        continue
                     visited.add(current)
                     parents = uri_to_broader.get(current, [])
-                    if not parents:
-                        break
-                    # Use the first parent found (maintains original behavior for single-parent cases)
-                    parent = parents[0]
-                    if parent == current:
-                        break
-                    ancestors.append(parent)
-                    if parent == _field_uri:
-                        break
-                    current = parent
+                    for parent in parents:
+                        if parent == current or parent in visited:
+                            continue
+                        ancestors.add(parent)
+                        if parent != _field_uri:
+                            frontier.append(parent)
                 return ancestors
 
             # Concepts to visualise: annotated leaves + their ancestors
@@ -245,17 +250,21 @@ class SymbologyManager:
             if not all_desc:
                 continue
 
-            # Helper: build an array_contains clause for one URI in this field
-            def _clause(u, _furi=field_uri):
-                safe = u.replace("'", "''")
-                return f'array_contains("{_furi}", \'{safe}\')'
+            # Helper: build a single expression testing whether the field's
+            # array of URIs intersects the given list (avoids OR-chaining one
+            # array_contains per URI).
+            def _in_uris(uris, _furi=field_uri):
+                quoted = ", ".join(
+                    "'" + u.replace("'", "''") + "'" for u in uris
+                )
+                return f'array_intersect("{_furi}", array({quoted}))'
 
             # Group rule: matches any feature with a value in this field's subtree
             group_sym = self._default_symbol(geom_type)
-            group_sym.setColor(self.random_color())
+            group_sym.setColor(self._colour_for_uri(field_uri))
             group_rule = QgsRuleBasedRenderer.Rule(
                 symbol=group_sym,
-                filterExp=" OR ".join(_clause(u) for u in all_desc),
+                filterExp=_in_uris(all_desc),
                 label=field_label,
                 description="Group: all descendants",
             )
@@ -265,10 +274,10 @@ class SymbologyManager:
             desc_incl = get_descendant_uris_fast(combined_children_map, field_uri)
             if desc_incl:
                 sym_all = self._default_symbol(geom_type)
-                sym_all.setColor(self.random_color())
+                sym_all.setColor(self._colour_for_uri(field_uri))
                 all_rule = QgsRuleBasedRenderer.Rule(
                     symbol=sym_all,
-                    filterExp=" OR ".join(_clause(u) for u in desc_incl),
+                    filterExp=_in_uris(desc_incl),
                     label=f"{field_label} (All)",
                     description="Field concept and all its descendants",
                 )
@@ -288,10 +297,10 @@ class SymbologyManager:
                     continue
 
                 sym_child = self._default_symbol(geom_type)
-                sym_child.setColor(self.random_color())
+                sym_child.setColor(self._colour_for_uri(uri))
                 child_rule = QgsRuleBasedRenderer.Rule(
                     symbol=sym_child,
-                    filterExp=" OR ".join(_clause(u) for u in desc_uris),
+                    filterExp=_in_uris(desc_uris),
                     label=uri_label,
                     description="",
                 )
