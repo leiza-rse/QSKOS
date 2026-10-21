@@ -12,6 +12,17 @@ _LIBS_DIR = os.path.join(_PLUGIN_DIR, "libs")
 if os.path.isdir(_LIBS_DIR) and _LIBS_DIR not in sys.path:
     sys.path.insert(0, _LIBS_DIR)
 
+# QGIS ships its own (often older/incomplete) rdflib in its Python
+# environment and may import it before this plugin loads.  Once rdflib is in
+# sys.modules the sys.path insert above is ignored, so the plugin would use
+# QGIS's rdflib and fail with e.g. "No module named
+# 'rdflib.plugins.stores.memory'".  Force our bundled copy to win by purging
+# any pre-imported rdflib modules before anything imports them.
+for _mod in list(sys.modules):
+    if _mod == "rdflib" or _mod.startswith("rdflib."):
+        del sys.modules[_mod]
+del _mod
+
 from PyQt5.QtWidgets import QAction, QDockWidget, QTabWidget
 from PyQt5.QtCore import Qt, QTimer
 from qgis.core import QgsProject
@@ -20,6 +31,7 @@ from .tabs.geopackage import GeopackageManager
 from .tabs.vocabulary import VocabularyManager
 from .tabs.layer import LayerManager
 from .tabs.symbology import SymbologyManager
+from .tabs.lod_export import LODExportManager
 from .utils.hierarchy import build_hierarchy_index
 
 
@@ -45,6 +57,7 @@ class qskos:
         self.vocabulary_manager = VocabularyManager(self)
         self.layer_manager      = LayerManager(self)
         self.symbology_manager  = SymbologyManager(self)
+        self.lod_export_manager = LODExportManager(self)
 
     # ── Hierarchy cache ────────────────────────────────────────────────────────
 
@@ -87,6 +100,12 @@ class qskos:
         self.tab_widget.addTab(
             self.symbology_manager.setup_symbology_tab(), "Symbology"
         )
+        self.tab_widget.addTab(
+            self.lod_export_manager.setup_lod_tab(), "LOD Export"
+        )
+
+        # Rebuild the per-layer LOD export forms when that tab is shown
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         self.dock_widget.setWidget(self.tab_widget)
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -158,6 +177,12 @@ class qskos:
 
     def on_feature_layer_changed(self, layer):
         self.layer_manager.on_feature_layer_changed(layer)
+
+    def _on_tab_changed(self, index):
+        """Refresh the LOD export forms whenever that tab is shown."""
+        if self.tab_widget and self.tab_widget.widget(index) is \
+                self.lod_export_manager.tab_widget:
+            self.lod_export_manager.refresh_forms()
 
     def on_tree_item_changed(self, item, column):
         """

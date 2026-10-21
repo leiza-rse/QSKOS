@@ -1,0 +1,26 @@
+@prefix qskos: <http://data.archaeology.link/data/qskos/> .
+@prefix lado: <http://archaeology.link/ontology#> .
+@prefix crm: <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix obj: <http://w3id.org/archlink/objects/> .
+@prefix geosparql: <http://www.opengis.net/ont/geosparql#> .
+@prefix sf: <http://www.opengis.net/ont/sf#> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+@prefix conthe: <https://www.w3id.org/archlink/terms/conservationthesaurus/> .
+@prefix crmdig: <http://www.ics.forth.gr/isl/CRMdig/> .
+
+obj:O.34736 rdf:type crm:E19_Physical_Object .
+obj:O.34736 rdfs:label "Lederschuh" .
+obj:O.34736 qskos:hasGeoTIFF "xyz.geotiff" .
+obj:O.34736 crm:P56_bears_feature qskos:feat_1 .
+
+qskos:feat_1 rdf:type crmdig:D9_Data_Object .
+qskos:feat_1 rdf:type oa:Annotation .
+qskos:feat_1 oa:hasTarget conthe:F71C6B .
+qskos:feat_1 oa:motivatedBy conthe:GD172G .
+conthe:GD172G rdf:type oa:Motivation .
+qskos:feat_1 oa:hasBody obj:O.34736 .
+qskos:feat_1 geosparql:hasGeometry qskos:feat_1_geom .
+qskos:feat_1_geom rdf:type sf:Polygon .
+qskos:feat_1_geom geosparql:asWKT "<http://data.archaeology.link/data/qskos/Local2DCoordinateSystem> POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))"^^geosparql:wktLiteral.

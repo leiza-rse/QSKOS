@@ -31,7 +31,8 @@ The plugin is designed for researchers who need to:
 - The GeoPackage becomes the single source of truth for your project
 
 ### 2. Vocabulary Management
-- Import SKOS vocabularies from RDF files (Turtle, JSON-LD) or CSV files
+- Import SKOS vocabularies from a local RDF file — the serialization is auto-detected, covering everything rdflib supports (Turtle, JSON-LD, RDF/XML, N-Triples, N3, TriG, …) — or from CSV
+- Or load directly from a remote URL — any RDF serialization rdflib supports is auto-detected
 - Vocabularies are stored as tables directly in your GeoPackage
 - Support for multiple vocabularies in the same GeoPackage
 - Language support for German and English
@@ -52,6 +53,14 @@ The plugin is designed for researchers who need to:
 - Visualize data based on semantic concepts
 - Automatically include all bound vocabularies
 
+### 6. Linked Open Data (LOD) Export
+- Export annotated feature data as Turtle (`.ttl`) Linked Open Data
+- Enter your institution's object namespace, then set an Object ID, Label and CRM class for each annotated layer
+- Annotation columns map to `oa:motivatedBy`, selected concept values map to `oa:hasTarget`
+- Includes CIDOC-CRM, CRMdig (`crmdig:D9_Data_Object`), and GeoSPARQL geometry triples
+- "Export All Layers to Turtle" merges everything into one file; layers sharing the same Object ID are aggregated into the same object automatically
+
+
 ## How to Use
 
 ### Prerequisites
@@ -69,9 +78,9 @@ The plugin is designed for researchers who need to:
 
 #### 2. Import Vocabularies
 - Go to the "Vocabulary" tab
-- Select your source type (Turtle, JSON-LD, or CSV)
+- Select your source type (Local RDF File, CSV, or Remote URL)
 - Choose the language (German or English)
-- Select your vocabulary file
+- Select your vocabulary file, or paste a URL to fetch from
 - Click "Load into GeoPackage"
 - The vocabulary will be stored as a table in your GeoPackage
 
@@ -95,13 +104,21 @@ The plugin is designed for researchers who need to:
 - The plugin will create hierarchical rule-based symbology
 - Your features will be visualized based on their semantic annotations
 
+#### 6. Export as Linked Open Data (LOD)
+- Go to the "LOD Export" tab and enter your institution's **Object Namespace** (e.g. `https://museum.example.org/objects/`)
+- One form is shown per annotated feature layer — for each, enter the Object ID (e.g. `O.34736`), Object Label (e.g. `Lederschuh`) and CRM class
+- The CRM class is an editable dropdown (e.g. `crm:E22_Human_Made_Object`); type any class if the list doesn't fit
+- Use "Export This Layer…" for a single layer, or "Export All Layers to Turtle" for everything
+- Layers with the same Object ID are merged into one object in the output file
+
+
 ## Important Notes
 
 - **GeoPackage requirement**: All layers must be loaded from a GeoPackage file for the plugin to work properly
 - **Single source of truth**: All plugin data is stored in the GeoPackage, not in the QGIS project file
 - **Portability**: You can move your GeoPackage file and all annotations will be preserved
 - **No automatic deletion**: Unbinding vocabularies or unchecking concepts does NOT delete annotation fields - you must remove them manually if needed
-- **Vocabulary formats**: Supported formats include Turtle (.ttl), JSON-LD (.jsonld), and CSV with specific structure
+- **Vocabulary formats**: Supported formats include any RDF serialization rdflib handles (Turtle, JSON-LD, RDF/XML, N-Triples, N3, TriG, …) — auto-detected for both local files and remote URLs — plus CSV with the specific structure below. JSON-LD vocabularies that model their hierarchy as nested `skos:narrower` are automatically inverted into the plugin's `broader`-based hierarchy.
 
 ### CSV Format Requirements
 

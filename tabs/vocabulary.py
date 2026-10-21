@@ -35,10 +35,13 @@ class VocabularyManager:
 
         self.source_type_combo = QComboBox()
         self.source_type_combo.addItems([
-            "Local Turtle (.ttl)",
-            "Local JSON-LD (.jsonld)",
+            "Local RDF File (auto-detect)",
             "Local CSV (.csv)",
+            "Remote URL",
         ])
+        self.source_type_combo.currentIndexChanged.connect(
+            self._on_source_type_changed
+        )
         layout.addRow("Source Type:", self.source_type_combo)
 
         self.language_combo = QComboBox()
@@ -48,12 +51,12 @@ class VocabularyManager:
         layout.addRow("Language:", self.language_combo)
 
         self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("Enter file path…")
+        self.source_input.setPlaceholderText("Enter file path or URL…")
         layout.addRow("Source:", self.source_input)
 
-        browse_btn = QPushButton("Browse…")
-        browse_btn.clicked.connect(self.browse_skos_file)
-        layout.addRow("", browse_btn)
+        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn.clicked.connect(self.browse_skos_file)
+        layout.addRow("", self.browse_btn)
 
         self.load_vocab_button = QPushButton("Load into GeoPackage")
         self.load_vocab_button.clicked.connect(self.on_load_vocab_clicked)
@@ -81,12 +84,21 @@ class VocabularyManager:
     def _on_language_changed(self, lang):
         self.plugin.selected_language = lang
 
+    def _on_source_type_changed(self, idx):
+        """Hide the file browse button when loading from a remote URL."""
+        is_url = idx == 2
+        if self.browse_btn:
+            self.browse_btn.setVisible(not is_url)
+        if self.source_input:
+            self.source_input.setPlaceholderText(
+                "Enter URL…" if is_url else "Enter file path…"
+            )
+
     def browse_skos_file(self):
         """Open a file dialog to pick a local SKOS source file."""
         filters = {
-            0: "Turtle Files (*.ttl);;All Files (*)",
-            1: "JSON-LD Files (*.jsonld);;All Files (*)",
-            2: "CSV Files (*.csv);;All Files (*)",
+            0: "RDF Files (*.ttl *.jsonld *.json *.rdf *.nt *.n3 *.trig);;All Files (*)",
+            1: "CSV Files (*.csv);;All Files (*)",
         }
         idx = self.source_type_combo.currentIndex()
         if idx not in filters:
@@ -107,10 +119,10 @@ class VocabularyManager:
         source_text = self.source_input.text().strip()
         if not source_text:
             QMessageBox.warning(None, "Input Required",
-                "Please enter a file path.")
+                "Please enter a file path or URL.")
             return
 
-        source_type_map = {0: "ttl", 1: "jsonld", 2: "csv"}
+        source_type_map = {0: "rdf", 1: "csv", 2: "url"}
         source_type = source_type_map.get(
             self.source_type_combo.currentIndex(), "ttl"
         )
