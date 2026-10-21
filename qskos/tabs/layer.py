@@ -26,6 +26,8 @@ from ..utils.gpkg import (
 from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name,
 )
+from ..utils.logging import log, LEVEL_WARNING
+
 
 
 def build_concept_tree_from_layer(vocab_layer):
@@ -177,6 +179,8 @@ class LayerManager:
             self.plugin.state.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
             self.load_concept_tree(self.plugin.state.current_feature_layer, vocab_layer)
         except Exception as e:
+            log(f"Failed to load concept tree for {scheme_uri}: {e}",
+                LEVEL_WARNING)
             self._clear_tree()
 
     def _on_vocab_binding_toggled(self, item):
@@ -445,7 +449,8 @@ class LayerManager:
             except Exception as e:
                 # Don't let one vocabulary failure prevent others from being
                 # processed. Logged (QgsMessageLog) in a later milestone.
-                print(f"[qskos] reinitialize fields failed for {scheme_uri}: {e}")
+                log(f"Reinitialize fields failed for {scheme_uri}: {e}",
+                    LEVEL_WARNING)
                 continue
 
     # ── Annotation field creation ──────────────────────────────────────────────
@@ -513,7 +518,7 @@ class LayerManager:
         except RuntimeError:
             pass  # Widget was deleted — safe to ignore
         except Exception as e:
-            print(f"[qskos] refresh_layer_combos error: {e}")
+            log(f"refresh_layer_combos error: {e}", LEVEL_WARNING)
 
     def schedule_refresh(self):
         """Defer refresh to the next event loop tick to avoid reentrancy."""

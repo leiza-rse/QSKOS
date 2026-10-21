@@ -31,6 +31,7 @@ from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name,
     extract_layer_spec,
 )
+from ..utils.logging import log, LEVEL_WARNING
 
 # Common CIDOC CRM classes offered in the (editable) class dropdown
 CRM_CLASSES = [
@@ -240,7 +241,7 @@ class LODExportManager:
                     _, labels = self.plugin.state.get_hierarchy_for_layer(vocab_layer)
                     concept_labels.update(labels)
                 except Exception as e:
-                    print(f"[qskos] LOD export: skipping vocab: {e}")
+                    log(f"LOD export: skipping vocab: {e}", LEVEL_WARNING)
                     continue
         return concept_labels
 

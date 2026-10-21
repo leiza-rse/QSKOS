@@ -22,6 +22,7 @@ from ..utils.gpkg import (
 from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_table_name,
 )
+from ..utils.logging import log, LEVEL_WARNING
 
 
 class SymbologyManager:
@@ -141,7 +142,7 @@ class SymbologyManager:
                     self.plugin.state.active_gpkg_path, table_name
                 )
             except Exception as e:
-                print(f"[qskos] Skipping vocab {scheme_uri}: {e}")
+                log(f"Skipping vocab {scheme_uri}: {e}", LEVEL_WARNING)
                 continue
 
             children_map, concept_labels = self.plugin.state.get_hierarchy_for_layer(
