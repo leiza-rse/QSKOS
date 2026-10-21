@@ -124,8 +124,8 @@ class LayerManager:
         """Load the concept hierarchy tree only for bound vocabularies."""
         if not current:
             self._clear_tree()
-            self.plugin.current_vocab_layer  = None
-            self.plugin.current_vocab_scheme = None
+            self.plugin.state.current_vocab_layer  = None
+            self.plugin.state.current_vocab_scheme = None
             return
 
         self._load_tree_for_item(current)
@@ -134,8 +134,8 @@ class LayerManager:
         """Load the concept hierarchy tree for a vocabulary item if it's bound."""
         if not item:
             self._clear_tree()
-            self.plugin.current_vocab_layer  = None
-            self.plugin.current_vocab_scheme = None
+            self.plugin.state.current_vocab_layer  = None
+            self.plugin.state.current_vocab_scheme = None
             return
 
         scheme_uri = item.data(Qt.UserRole)
@@ -153,7 +153,7 @@ class LayerManager:
 
         # Get currently bound vocabularies for this feature layer
         bound_schemes = set(
-            get_bound_vocab_schemes(self.plugin.active_gpkg_path, feature_table)
+            get_bound_vocab_schemes(self.plugin.state.active_gpkg_path, feature_table)
         )
 
         # Only load tree if the vocabulary is bound
@@ -162,18 +162,18 @@ class LayerManager:
             return
 
         table_name = find_vocab_table_for_scheme(
-            self.plugin.active_gpkg_path, scheme_uri
+            self.plugin.state.active_gpkg_path, scheme_uri
         )
         if not table_name:
             self._clear_tree()
             return
         try:
             vocab_layer = ensure_vocab_layer_loaded(
-                self.plugin.active_gpkg_path, table_name
+                self.plugin.state.active_gpkg_path, table_name
             )
-            self.plugin.current_vocab_scheme = scheme_uri
-            self.plugin.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
-            self.load_concept_tree(self.plugin.current_feature_layer, vocab_layer)
+            self.plugin.state.current_vocab_scheme = scheme_uri
+            self.plugin.state.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
+            self.load_concept_tree(self.plugin.state.current_feature_layer, vocab_layer)
         except Exception as e:
             self._clear_tree()
 
@@ -182,7 +182,7 @@ class LayerManager:
         Handle checkbox state changes to bind/unbind vocabularies.
         Checkbox only changes binding state - use unbind button for confirmation.
         """
-        if not item or not self.plugin.active_gpkg_path:
+        if not item or not self.plugin.state.active_gpkg_path:
             return
 
         scheme_uri = item.data(Qt.UserRole)
@@ -207,7 +207,7 @@ class LayerManager:
             if is_checked:
                 # Bind the vocabulary
                 bind_feature_to_vocab(
-                    self.plugin.active_gpkg_path, feature_table, scheme_uri
+                    self.plugin.state.active_gpkg_path, feature_table, scheme_uri
                 )
                 # If this is the currently selected item, load the tree automatically
                 if self.vocab_list.currentItem() == item:
@@ -224,13 +224,13 @@ class LayerManager:
                 )
                 if reply == QMessageBox.Yes:
                     unbind_feature_from_vocab(
-                        self.plugin.active_gpkg_path, feature_table, scheme_uri
+                        self.plugin.state.active_gpkg_path, feature_table, scheme_uri
                     )
                     # Clear the tree if we just unbound the currently displayed vocab
-                    if self.plugin.current_vocab_scheme == scheme_uri:
+                    if self.plugin.state.current_vocab_scheme == scheme_uri:
                         self._clear_tree()
-                        self.plugin.current_vocab_layer  = None
-                        self.plugin.current_vocab_scheme = None
+                        self.plugin.state.current_vocab_layer  = None
+                        self.plugin.state.current_vocab_scheme = None
                 else:
                     # Revert the checkbox state if user cancelled
                     item.setCheckState(Qt.Checked)
@@ -273,16 +273,16 @@ class LayerManager:
 
         try:
             unbind_feature_from_vocab(
-                self.plugin.active_gpkg_path, feature_table, scheme_uri
+                self.plugin.state.active_gpkg_path, feature_table, scheme_uri
             )
             # Update the checkbox state
             current.setCheckState(Qt.Unchecked)
 
             # Clear the tree if we just unbound the currently displayed vocab
-            if self.plugin.current_vocab_scheme == scheme_uri:
+            if self.plugin.state.current_vocab_scheme == scheme_uri:
                 self._clear_tree()
-                self.plugin.current_vocab_layer  = None
-                self.plugin.current_vocab_scheme = None
+                self.plugin.state.current_vocab_layer  = None
+                self.plugin.state.current_vocab_scheme = None
 
         except Exception as e:
             QMessageBox.critical(None, "Unbind Failed",
@@ -296,11 +296,11 @@ class LayerManager:
             self.vocab_list.clear()
         self._clear_tree()
 
-        self.plugin.current_feature_layer = layer
-        self.plugin.current_vocab_layer   = None
-        self.plugin.current_vocab_scheme  = None
+        self.plugin.state.current_feature_layer = layer
+        self.plugin.state.current_vocab_layer   = None
+        self.plugin.state.current_vocab_scheme  = None
 
-        if not layer or not self.plugin.active_gpkg_path:
+        if not layer or not self.plugin.state.active_gpkg_path:
             return
 
         feature_table = layer_table_name(layer)
@@ -319,17 +319,17 @@ class LayerManager:
         Populate the vocabulary list with all available vocabularies,
         showing their binding state with checkboxes.
         """
-        if not self.plugin.active_gpkg_path:
+        if not self.plugin.state.active_gpkg_path:
             return
 
         # Get all vocabularies in the GeoPackage
-        all_vocabs = get_vocab_entries(self.plugin.active_gpkg_path)
+        all_vocabs = get_vocab_entries(self.plugin.state.active_gpkg_path)
         if not all_vocabs:
             return
 
         # Get currently bound vocabularies for this feature layer
         bound_schemes = set(
-            get_bound_vocab_schemes(self.plugin.active_gpkg_path, feature_table)
+            get_bound_vocab_schemes(self.plugin.state.active_gpkg_path, feature_table)
         )
 
         # Add all vocabularies to the list with appropriate checkbox state
@@ -380,9 +380,9 @@ class LayerManager:
         self.tree_view.blockSignals(True)
         self.tree_view.clear()
 
-        self.plugin.current_feature_layer = feature_layer
-        self.plugin.current_vocab_layer   = vocab_layer
-        self.plugin.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
+        self.plugin.state.current_feature_layer = feature_layer
+        self.plugin.state.current_vocab_layer   = vocab_layer
+        self.plugin.state.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
 
         for item in build_concept_tree_from_layer(vocab_layer):
             self.tree_view.addTopLevelItem(item)
@@ -414,7 +414,7 @@ class LayerManager:
         across every vocabulary bound to it. Annotation fields are detected from
         each bound vocabulary's concept URIs (not by field-type sniffing).
         """
-        if not feature_layer or not self.plugin.active_gpkg_path:
+        if not feature_layer or not self.plugin.state.active_gpkg_path:
             return
 
         feature_table = layer_table_name(feature_layer)
@@ -422,19 +422,19 @@ class LayerManager:
             return
 
         bound_schemes = get_bound_vocab_schemes(
-            self.plugin.active_gpkg_path, feature_table
+            self.plugin.state.active_gpkg_path, feature_table
         )
         for scheme_uri in bound_schemes:
             table_name = find_vocab_table_for_scheme(
-                self.plugin.active_gpkg_path, scheme_uri
+                self.plugin.state.active_gpkg_path, scheme_uri
             )
             if not table_name:
                 continue
             try:
                 vocab_layer = ensure_vocab_layer_loaded(
-                    self.plugin.active_gpkg_path, table_name
+                    self.plugin.state.active_gpkg_path, table_name
                 )
-                children_map, concept_labels = self.plugin.get_hierarchy_for_layer(
+                children_map, concept_labels = self.plugin.state.get_hierarchy_for_layer(
                     vocab_layer
                 )
                 reinitialize_annotation_fields_for_vocab(
@@ -454,11 +454,11 @@ class LayerManager:
         with a ValueRelation widget showing descendants of concept_uri.
         Delegates to utils.annotation.create_annotation_field.
         """
-        feature_layer = self.plugin.current_feature_layer
-        vocab_layer = self.plugin.current_vocab_layer
+        feature_layer = self.plugin.state.current_feature_layer
+        vocab_layer = self.plugin.state.current_vocab_layer
         if not feature_layer or not vocab_layer:
             return
-        children_map, _ = self.plugin.get_hierarchy_for_layer(vocab_layer)
+        children_map, _ = self.plugin.state.get_hierarchy_for_layer(vocab_layer)
         created = annotation_field_create(
             feature_layer, vocab_layer, children_map, concept_uri, label
         )
@@ -480,10 +480,10 @@ class LayerManager:
             all_layers = list(QgsProject.instance().mapLayers().values())
 
             vocab_table_names = set()
-            if self.plugin.active_gpkg_path:
+            if self.plugin.state.active_gpkg_path:
                 vocab_table_names = {
                     r["layer_name"]
-                    for r in read_config(self.plugin.active_gpkg_path)
+                    for r in read_config(self.plugin.state.active_gpkg_path)
                     if r["layer_role"] == ROLE_VOCAB
                 }
 
@@ -500,9 +500,9 @@ class LayerManager:
                     excepted.append(layer)
                     continue
                 # If a GPKG is active, exclude layers not from it
-                if self.plugin.active_gpkg_path and (
+                if self.plugin.state.active_gpkg_path and (
                     norm_path(layer_gpkg_path(layer))
-                    != norm_path(self.plugin.active_gpkg_path)
+                    != norm_path(self.plugin.state.active_gpkg_path)
                 ):
                     excepted.append(layer)
 

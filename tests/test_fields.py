@@ -4,7 +4,7 @@
 
 import json
 
-from utils.fields import (
+from qskos.utils.fields import (
     encode_annotation_values,
     parse_field_value,
     find_annotation_field_names,

@@ -106,7 +106,7 @@ class LODExportManager:
                 item.widget().deleteLater()
         self.forms = []
 
-        gpkg = self.plugin.active_gpkg_path
+        gpkg = self.plugin.state.active_gpkg_path
         if not gpkg:
             self._set_status("Select a GeoPackage first.")
             return
@@ -199,7 +199,7 @@ class LODExportManager:
 
     def _feature_layers(self):
         """All vector feature layers from the active GeoPackage."""
-        gpkg = self.plugin.active_gpkg_path
+        gpkg = self.plugin.state.active_gpkg_path
         if not gpkg:
             return []
         vocab_table_names = {
@@ -222,19 +222,19 @@ class LODExportManager:
         """Map concept URI → label across all bound vocabularies in the GPKG."""
         concept_labels = {}
         seen_schemes = set()
-        for r in read_config(self.plugin.active_gpkg_path):
+        for r in read_config(self.plugin.state.active_gpkg_path):
             if r["layer_role"] == ROLE_VOCAB and r["scheme_uri"] not in seen_schemes:
                 seen_schemes.add(r["scheme_uri"])
                 table_name = find_vocab_table_for_scheme(
-                    self.plugin.active_gpkg_path, r["scheme_uri"]
+                    self.plugin.state.active_gpkg_path, r["scheme_uri"]
                 )
                 if not table_name:
                     continue
                 try:
                     vocab_layer = ensure_vocab_layer_loaded(
-                        self.plugin.active_gpkg_path, table_name
+                        self.plugin.state.active_gpkg_path, table_name
                     )
-                    _, labels = self.plugin.get_hierarchy_for_layer(vocab_layer)
+                    _, labels = self.plugin.state.get_hierarchy_for_layer(vocab_layer)
                     concept_labels.update(labels)
                 except Exception as e:
                     print(f"[qskos] LOD export: skipping vocab: {e}")
@@ -244,7 +244,7 @@ class LODExportManager:
     def _vocab_prefixes(self):
         return {
             v["scheme_uri"]: derive_prefix(v["scheme_uri"])
-            for v in get_vocab_entries(self.plugin.active_gpkg_path)
+            for v in get_vocab_entries(self.plugin.state.active_gpkg_path)
         }
 
     def _object_namespace(self):
@@ -315,7 +315,7 @@ class LODExportManager:
 
     def on_export_all_clicked(self):
         """Export all layers with an Object ID into one Turtle file."""
-        if not self.plugin.active_gpkg_path:
+        if not self.plugin.state.active_gpkg_path:
             QMessageBox.warning(None, "No GeoPackage", "No active GeoPackage.")
             return
 

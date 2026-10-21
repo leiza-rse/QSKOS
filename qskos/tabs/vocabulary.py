@@ -82,7 +82,7 @@ class VocabularyManager:
     # ── UI callbacks ───────────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang):
-        self.plugin.selected_language = lang
+        self.plugin.state.selected_language = lang
 
     def _on_source_type_changed(self, idx):
         """Hide the file browse button when loading from a remote URL."""
@@ -111,7 +111,7 @@ class VocabularyManager:
 
     def on_load_vocab_clicked(self):
         """Parse the SKOS source and import it into the active GeoPackage."""
-        if not self.plugin.active_gpkg_path:
+        if not self.plugin.state.active_gpkg_path:
             QMessageBox.warning(None, "No GeoPackage",
                 "Please select a GeoPackage in the GeoPackage tab first.")
             return
@@ -129,7 +129,7 @@ class VocabularyManager:
 
         try:
             concepts = load_skos_source(
-                source_text, source_type, self.plugin.selected_language
+                source_text, source_type, self.plugin.state.selected_language
             )
             if not concepts:
                 raise ValueError("No concepts loaded from source.")
@@ -139,7 +139,7 @@ class VocabularyManager:
                 return   # user cancelled
 
             # Import guard — confirm before replacing an existing vocab
-            if scheme_exists_in_gpkg(self.plugin.active_gpkg_path, scheme_uri):
+            if scheme_exists_in_gpkg(self.plugin.state.active_gpkg_path, scheme_uri):
                 reply = QMessageBox.question(
                     None, "Vocabulary Already Exists",
                     f"A vocabulary for\n'{scheme_uri}'\nalready exists in this "
@@ -153,11 +153,11 @@ class VocabularyManager:
             table_name = import_vocab_to_gpkg(
                 concepts,
                 scheme_uri,
-                self.plugin.selected_language,
-                self.plugin.active_gpkg_path,
+                self.plugin.state.selected_language,
+                self.plugin.state.active_gpkg_path,
             )
             # Load the new table into the project so ValueRelation can reference it
-            ensure_vocab_layer_loaded(self.plugin.active_gpkg_path, table_name)
+            ensure_vocab_layer_loaded(self.plugin.state.active_gpkg_path, table_name)
 
             self.vocab_status_label.setText(f"✅ Imported: {table_name}")
             QMessageBox.information(None, "Success",

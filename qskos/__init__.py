@@ -32,7 +32,7 @@ from .tabs.vocabulary import VocabularyManager
 from .tabs.layer import LayerManager
 from .tabs.symbology import SymbologyManager
 from .tabs.lod_export import LODExportManager
-from .utils.hierarchy import build_hierarchy_index
+from .state import QskosState
 
 
 class qskos:
@@ -40,13 +40,8 @@ class qskos:
         self.iface      = iface
         self.plugin_dir = os.path.dirname(__file__)
 
-        # ── Cross-tab state ────────────────────────────────────────────────────
-        self.active_gpkg_path      = None   # Path to the active GeoPackage
-        self.current_feature_layer = None   # Feature layer selected in Layer tab
-        self.current_vocab_layer   = None   # Vocab layer currently shown in tree
-        self.current_vocab_scheme  = None   # scheme_uri of current tree vocab
-        self.selected_language     = "en"   # Import language
-        self.hierarchy_cache       = {}     # vocab_layer.id() → (children_map, labels)
+        # ── Cross-tab state (typed, explicit; see state.py) ────────────────────
+        self.state = QskosState()
 
         # ── Widget references ──────────────────────────────────────────────────
         self.dock_widget = None
@@ -58,21 +53,6 @@ class qskos:
         self.layer_manager      = LayerManager(self)
         self.symbology_manager  = SymbologyManager(self)
         self.lod_export_manager = LODExportManager(self)
-
-    # ── Hierarchy cache ────────────────────────────────────────────────────────
-
-    def get_hierarchy_for_layer(self, vocab_layer):
-        """
-        Return (children_map, concept_labels) for vocab_layer, building and
-        caching on first call.  Cache is keyed by layer.id() — safe for
-        saved/reopened projects because layer IDs change on reload, triggering
-        an automatic rebuild.
-        """
-        layer_id = vocab_layer.id()
-        if layer_id not in self.hierarchy_cache:
-            self.hierarchy_cache[layer_id] = build_hierarchy_index(vocab_layer)
-            print(f"[qskos] Built hierarchy cache for: {vocab_layer.name()}")
-        return self.hierarchy_cache[layer_id]
 
     # ── QGIS plugin lifecycle ──────────────────────────────────────────────────
 
@@ -154,9 +134,9 @@ class qskos:
 
     def _save_gpkg_path(self):
         """Write the active GPKG path into the QGIS project file."""
-        if self.active_gpkg_path:
+        if self.state.active_gpkg_path:
             QgsProject.instance().writeEntry(
-                "qskos", "active_gpkg", self.active_gpkg_path
+                "qskos", "active_gpkg", self.state.active_gpkg_path
             )
 
     def _restore_gpkg_path(self):

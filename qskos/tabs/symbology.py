@@ -59,7 +59,7 @@ class SymbologyManager:
 
     def reset_symbology(self):
         """Reset the feature layer to a default single-symbol renderer."""
-        layer = self.plugin.current_feature_layer
+        layer = self.plugin.state.current_feature_layer
         if not layer:
             QMessageBox.warning(None, "No Layer", "No feature layer selected.")
             return
@@ -95,12 +95,12 @@ class SymbologyManager:
         field names and matching them against concept URIs across ALL bound
         vocabularies.  The currently displayed tree vocab does not matter here.
         """
-        layer = self.plugin.current_feature_layer
+        layer = self.plugin.state.current_feature_layer
         if not layer:
             QMessageBox.warning(None, "No Layer",
                 "Please select a feature layer first.")
             return
-        if not self.plugin.active_gpkg_path:
+        if not self.plugin.state.active_gpkg_path:
             QMessageBox.warning(None, "No GeoPackage", "No active GeoPackage.")
             return
 
@@ -112,7 +112,7 @@ class SymbologyManager:
 
         feature_table = layer_table_name(layer)
         bound_schemes = get_bound_vocab_schemes(
-            self.plugin.active_gpkg_path, feature_table
+            self.plugin.state.active_gpkg_path, feature_table
         )
         if not bound_schemes:
             QMessageBox.warning(None, "No Vocabulary",
@@ -125,19 +125,19 @@ class SymbologyManager:
 
         for scheme_uri in bound_schemes:
             table_name = find_vocab_table_for_scheme(
-                self.plugin.active_gpkg_path, scheme_uri
+                self.plugin.state.active_gpkg_path, scheme_uri
             )
             if not table_name:
                 continue
             try:
                 vocab_layer = ensure_vocab_layer_loaded(
-                    self.plugin.active_gpkg_path, table_name
+                    self.plugin.state.active_gpkg_path, table_name
                 )
             except Exception as e:
                 print(f"[qskos] Skipping vocab {scheme_uri}: {e}")
                 continue
 
-            children_map, concept_labels = self.plugin.get_hierarchy_for_layer(
+            children_map, concept_labels = self.plugin.state.get_hierarchy_for_layer(
                 vocab_layer
             )
             # Merge into combined maps (union, no duplicates)

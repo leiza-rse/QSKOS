@@ -73,7 +73,7 @@ class GeopackageManager:
                 self.status_label.setText(f"❌ File not found: {path}")
             return
 
-        self.plugin.active_gpkg_path = path
+        self.plugin.state.active_gpkg_path = path
         ensure_config_table(path)
         self.refresh_vocab_list()
 
@@ -103,11 +103,11 @@ class GeopackageManager:
             return
         self.vocab_list_widget.clear()
 
-        if not self.plugin.active_gpkg_path:
+        if not self.plugin.state.active_gpkg_path:
             self.vocab_list_widget.setEnabled(False)
             return
 
-        entries = get_vocab_entries(self.plugin.active_gpkg_path)
+        entries = get_vocab_entries(self.plugin.state.active_gpkg_path)
         for entry in entries:
             lang = entry.get("language") or "?"
             text = f"{entry['layer_name']}  [{lang}]  —  {entry['scheme_uri']}"
@@ -117,8 +117,8 @@ class GeopackageManager:
 
         # Update status count
         n = self.vocab_list_widget.count()
-        if self.status_label and self.plugin.active_gpkg_path:
-            short = os.path.basename(self.plugin.active_gpkg_path)
+        if self.status_label and self.plugin.state.active_gpkg_path:
+            short = os.path.basename(self.plugin.state.active_gpkg_path)
             self.status_label.setText(
                 f"✅ {short} — {n} vocabular{'y' if n == 1 else 'ies'} found."
             )
