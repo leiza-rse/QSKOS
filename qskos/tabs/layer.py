@@ -4,28 +4,64 @@
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QTreeWidget, QLabel,
+    QPushButton, QTreeWidget, QTreeWidgetItem, QLabel,
     QListWidget, QListWidgetItem, QMessageBox, QInputDialog
 )
-from PyQt5.QtCore import Qt, QTimer, QVariant
+from PyQt5.QtCore import Qt, QTimer
 from qgis.core import (
-    QgsProject, QgsMapLayer, QgsField,
-    QgsEditorWidgetSetup, QgsDefaultValue, QgsMapLayerProxyModel
+    QgsProject, QgsMapLayer, QgsMapLayerProxyModel
 )
 from qgis.gui import QgsMapLayerComboBox
 
-from ..utils.hierarchy import (
-    build_concept_tree_from_layer,
-    get_filtered_descendant_uris_fast,
+from ..utils.annotation import (
+    create_annotation_field as annotation_field_create,
+    reinitialize_annotation_fields_for_vocab,
 )
-from ..utils.fields import parse_field_value
 from ..utils.gpkg import (
     read_config, get_vocab_entries, get_bound_vocab_schemes,
     find_vocab_table_for_scheme, bind_feature_to_vocab,
     unbind_feature_from_vocab, ensure_vocab_layer_loaded,
     layer_gpkg_path, layer_table_name, norm_path,
-    ROLE_VOCAB, F_CONCEPT, F_LABEL, F_DEF,
+    ROLE_VOCAB,
 )
+
+
+def build_concept_tree_from_layer(vocab_layer):
+    """
+    Build QTreeWidgetItems from a vocab OGR layer (loaded from GPKG).
+    Returns root items (concepts with no broader).
+
+    Two-pass approach:
+      Pass 1 — create one QTreeWidgetItem per concept.
+      Pass 2 — attach children to parents; collect roots.
+
+    Qt widget adapter — kept in the tabs layer (not utils/hierarchy.py, which
+    is QGIS-free for unit testing).
+    """
+    concepts   = {}
+    root_items = []
+
+    for feat in vocab_layer.getFeatures():
+        uri   = feat["concept"]
+        label = feat["prefLabel"]
+        item  = QTreeWidgetItem([label])
+        item.setData(0, Qt.UserRole, uri)
+        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setCheckState(0, Qt.Unchecked)
+        concepts[uri] = item
+
+    for feat in vocab_layer.getFeatures():
+        uri     = feat["concept"]
+        broader = feat["broader"] or None
+        item    = concepts.get(uri)
+        if item is None:
+            continue
+        if broader and broader in concepts:
+            concepts[broader].addChild(item)
+        else:
+            root_items.append(item)
+
+    return root_items
 
 
 class LayerManager:
@@ -374,9 +410,9 @@ class LayerManager:
 
     def reinitialize_all_annotation_fields_for_layer(self, feature_layer):
         """
-        Reinitialize ValueRelation widgets for all annotation fields on a layer.
-        This handles all bound vocabularies, not just the currently selected one.
-        Called when a feature layer is selected to ensure proper widget configuration.
+        Re-point the ValueRelation widgets of all annotation fields on a layer,
+        across every vocabulary bound to it. Annotation fields are detected from
+        each bound vocabulary's concept URIs (not by field-type sniffing).
         """
         if not feature_layer or not self.plugin.active_gpkg_path:
             return
@@ -385,180 +421,50 @@ class LayerManager:
         if not feature_table:
             return
 
-        # Get all bound vocabularies for this feature layer
-        bound_schemes = get_bound_vocab_schemes(self.plugin.active_gpkg_path, feature_table)
-        if not bound_schemes:
-            return
-
-        # Get all existing annotation fields on the feature layer
-        existing_fields = [f.name() for f in feature_layer.fields()]
-        annotation_fields = []
-        for field_name in existing_fields:
-            if field_name and field_name != 'fid' and not field_name.startswith('qskos_'):
-                field_index = feature_layer.fields().lookupField(field_name)
-                if field_index != -1:
-                    field_type = feature_layer.fields()[field_index].type()
-                    # Check for Map type or other types that might be used for annotations
-                    # QVariant.Map = 8, but some GeoPackage layers might use other types like Json (11)
-                    if field_type == QVariant.Map or field_type == QVariant.String or field_type == QVariant.StringList or field_type == 11:  # 11 is likely QVariant.Json
-                        annotation_fields.append(field_name)
-
-        if not annotation_fields:
-            return
-
-        # For each bound vocabulary, load its layer and reconfigure relevant fields
+        bound_schemes = get_bound_vocab_schemes(
+            self.plugin.active_gpkg_path, feature_table
+        )
         for scheme_uri in bound_schemes:
-            table_name = find_vocab_table_for_scheme(self.plugin.active_gpkg_path, scheme_uri)
+            table_name = find_vocab_table_for_scheme(
+                self.plugin.active_gpkg_path, scheme_uri
+            )
             if not table_name:
                 continue
-
             try:
-                vocab_layer = ensure_vocab_layer_loaded(self.plugin.active_gpkg_path, table_name)
-
-                # Set the current vocabulary layer so create_annotation_field can use it
-                self.plugin.current_vocab_layer = vocab_layer
-
-                # Find fields that belong to this vocabulary (concept URIs from this scheme)
-                for concept_uri in annotation_fields:
-                    # Check if this concept belongs to the current vocabulary
-                    if self._concept_belongs_to_vocab(vocab_layer, concept_uri):
-                        # Get the concept label from the vocabulary
-                        label = self._get_concept_label_from_vocab_layer(vocab_layer, concept_uri)
-                        if label:
-                            # Reuse the working create_annotation_field logic
-                            # But since the field already exists, we need to reconfigure it
-                            self._reconfigure_annotation_field(feature_layer, vocab_layer, concept_uri, label)
-
+                vocab_layer = ensure_vocab_layer_loaded(
+                    self.plugin.active_gpkg_path, table_name
+                )
+                children_map, concept_labels = self.plugin.get_hierarchy_for_layer(
+                    vocab_layer
+                )
+                reinitialize_annotation_fields_for_vocab(
+                    feature_layer, vocab_layer, children_map, concept_labels
+                )
             except Exception as e:
-                # Don't let one vocabulary failure prevent others from being processed
+                # Don't let one vocabulary failure prevent others from being
+                # processed. Logged (QgsMessageLog) in a later milestone.
+                print(f"[qskos] reinitialize fields failed for {scheme_uri}: {e}")
                 continue
-
-    def _concept_belongs_to_vocab(self, vocab_layer, concept_uri):
-        """Check if a concept URI exists in a vocabulary layer."""
-        if not vocab_layer or not concept_uri:
-            return False
-
-        # Check if the concept exists in this vocabulary
-        request = f'"{F_CONCEPT}" = \'{concept_uri}\''
-        features = list(vocab_layer.getFeatures(request))
-        return len(features) > 0
-
-    def _get_concept_label_from_vocab_layer(self, vocab_layer, concept_uri):
-        """Get the prefLabel for a concept URI from a vocabulary layer."""
-        if not vocab_layer or not concept_uri:
-            return None
-
-        request = f'"{F_CONCEPT}" = \'{concept_uri}\''
-        features = list(vocab_layer.getFeatures(request))
-        if features:
-            return features[0][F_LABEL]
-        return None
-
-    def _get_concept_label_from_tree(self, concept_uri):
-        """Find a concept URI in the tree and return its display label."""
-        if not self.tree_view:
-            return None
-
-        def search_tree_item(item):
-            for i in range(item.childCount()):
-                child = item.child(i)
-                if child.data(0, Qt.UserRole) == concept_uri:
-                    return child.text(0)
-                result = search_tree_item(child)
-                if result:
-                    return result
-            return None
-
-        return search_tree_item(self.tree_view.invisibleRootItem())
-
-    def _reconfigure_annotation_field(self, feature_layer, vocab_layer, concept_uri, label):
-        """
-        Reconfigure an existing annotation field with ValueRelation widget setup.
-        This is similar to create_annotation_field but doesn't create new fields.
-        """
-        field_index = feature_layer.fields().lookupField(concept_uri)
-        if field_index == -1:
-            return
-
-        # ValueRelation filter: descendants of concept_uri, excluding itself
-        children_map, _ = self.plugin.get_hierarchy_for_layer(vocab_layer)
-        target_uris = get_filtered_descendant_uris_fast(children_map, concept_uri)
-
-        if not target_uris:
-            filter_expression = "0"   # concept has no descendants — widget shows nothing
-        else:
-            quoted = ["'" + u.replace("'", "''") + "'" for u in target_uris]
-            filter_expression = f'"{F_CONCEPT}" IN ({",".join(quoted)})'
-
-        config = {
-            "Layer":            vocab_layer.id(),
-            "Key":              F_CONCEPT,   # stored value: concept URI
-            "Value":            F_LABEL,     # displayed: prefLabel
-            "Description":      F_DEF,       # tooltip: definition
-            "FilterExpression": filter_expression,
-            "AllowMulti":       True,
-            "UseCompleter":     True,
-            "OrderByValue":     True,
-        }
-
-        # Set the ValueRelation widget configuration
-        feature_layer.setEditorWidgetSetup(
-            field_index, QgsEditorWidgetSetup("ValueRelation", config)
-        )
-        feature_layer.setFieldAlias(field_index, label)
 
     # ── Annotation field creation ──────────────────────────────────────────────
 
     def create_annotation_field(self, concept_uri, label):
         """
-        Add a Map-type annotation field named concept_uri to the feature layer,
+        Add an annotation field named concept_uri to the current feature layer,
         with a ValueRelation widget showing descendants of concept_uri.
+        Delegates to utils.annotation.create_annotation_field.
         """
-        if not self.plugin.current_feature_layer or not self.plugin.current_vocab_layer:
+        feature_layer = self.plugin.current_feature_layer
+        vocab_layer = self.plugin.current_vocab_layer
+        if not feature_layer or not vocab_layer:
             return
-        if self.plugin.current_feature_layer.fields().lookupField(concept_uri) != -1:
-            return  # Field already exists — nothing to do
-
-        layer = self.plugin.current_feature_layer
-        layer.startEditing()
-        layer.addAttribute(QgsField(concept_uri, QVariant.String))
-        layer.updateFields()
-
-        field_index = layer.fields().lookupField(concept_uri)
-        layer.setDefaultValueDefinition(
-            field_index, QgsDefaultValue("'[]'", False)
+        children_map, _ = self.plugin.get_hierarchy_for_layer(vocab_layer)
+        created = annotation_field_create(
+            feature_layer, vocab_layer, children_map, concept_uri, label
         )
-
-        # ValueRelation filter: descendants of concept_uri, excluding itself
-        children_map, _ = self.plugin.get_hierarchy_for_layer(
-            self.plugin.current_vocab_layer
-        )
-        target_uris = get_filtered_descendant_uris_fast(children_map, concept_uri)
-
-        if not target_uris:
-            filter_expression = "0"   # concept has no descendants — widget shows nothing
-        else:
-            quoted = ["'" + u.replace("'", "''") + "'" for u in target_uris]
-            filter_expression = f'"{F_CONCEPT}" IN ({",".join(quoted)})'
-
-        config = {
-            "Layer":            self.plugin.current_vocab_layer.id(),
-            "Key":              F_CONCEPT,   # stored value: concept URI
-            "Value":            F_LABEL,     # displayed: prefLabel
-            "Description":      F_DEF,       # tooltip: definition
-            "FilterExpression": filter_expression,
-            "AllowMulti":       True,
-            "UseCompleter":     True,
-            "OrderByValue":     True,
-        }
-        layer.setEditorWidgetSetup(
-            field_index, QgsEditorWidgetSetup("ValueRelation", config)
-        )
-        layer.setFieldAlias(field_index, label)
-        layer.commitChanges()
-
-        QMessageBox.information(None, "Field Created",
-            f"Annotation field '{label}' created.")
+        if created:
+            QMessageBox.information(None, "Field Created",
+                f"Annotation field '{label}' created.")
 
     # ── Layer combo refresh ────────────────────────────────────────────────────
 

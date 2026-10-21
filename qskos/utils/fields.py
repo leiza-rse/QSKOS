@@ -36,6 +36,15 @@ def parse_field_value(val):
     return []
 
 
+def find_annotation_field_names(field_names, concept_labels):
+    """
+    Return the subset of field_names whose name is a known concept URI in
+    concept_labels. This detects annotation fields from a bound vocabulary's
+    concept URIs (not by field-type sniffing).
+    """
+    return [name for name in field_names if name in concept_labels]
+
+
 def _parse_string_value(s):
     """Parse a single string value into a list of URIs (lenient)."""
     s = s.strip()

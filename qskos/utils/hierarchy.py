@@ -1,59 +1,24 @@
 # hierarchy.py
 # qskos QGIS Plugin - Hierarchy Utilities
-# Tree building, hierarchy index, and descendant BFS.
-# Language is baked into the prefLabel column at GPKG import time —
-# no language parameter is needed here.
-
-from PyQt5.QtWidgets import QTreeWidgetItem
-from PyQt5.QtCore import Qt
-
-
-def build_concept_tree_from_layer(vocab_layer):
-    """
-    Build QTreeWidgetItems from a vocab OGR layer (loaded from GPKG).
-    Returns root items (concepts with no broader).
-
-    Two-pass approach:
-      Pass 1 — create one QTreeWidgetItem per concept.
-      Pass 2 — attach children to parents; collect roots.
-    """
-    concepts   = {}
-    root_items = []
-
-    # Pass 1: create items
-    for feat in vocab_layer.getFeatures():
-        uri   = feat["concept"]
-        label = feat["prefLabel"]
-        item  = QTreeWidgetItem([label])
-        item.setData(0, Qt.UserRole, uri)
-        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        item.setCheckState(0, Qt.Unchecked)
-        concepts[uri] = item
-
-    # Pass 2: wire hierarchy
-    for feat in vocab_layer.getFeatures():
-        uri     = feat["concept"]
-        broader = feat["broader"] or None
-        item    = concepts.get(uri)
-        if item is None:
-            continue
-        if broader and broader in concepts:
-            concepts[broader].addChild(item)
-        else:
-            root_items.append(item)
-
-    return root_items
+# Pure, QGIS-free functions: hierarchy index building and descendant BFS.
+# The Qt tree-widget builder (build_concept_tree_from_layer) lives in
+# tabs/layer.py; this module intentionally has no Qt/QGIS imports so it can be
+# unit-tested without a QGIS runtime.
+# Language is baked into the prefLabel column at GPKG import time — no language
+# parameter is needed here.
 
 
 def build_hierarchy_index(vocab_layer):
     """
-    Precompute the hierarchy from a vocab OGR layer.
+    Precompute the hierarchy from a vocab layer.
 
     Returns:
         children_map   — {parent_uri: [child_uri, ...], None: [root_uri, ...]}
         concept_labels — {uri: prefLabel}
 
     None is used as the key for root concepts (those with no broader).
+    vocab_layer must be an iterable of features exposing 'concept', 'broader',
+    'prefLabel' (a QGIS vector layer, or a fake in tests).
     """
     children_map   = {None: []}
     concept_labels = {}

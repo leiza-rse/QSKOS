@@ -4,7 +4,11 @@
 
 import json
 
-from utils.fields import encode_annotation_values, parse_field_value
+from utils.fields import (
+    encode_annotation_values,
+    parse_field_value,
+    find_annotation_field_names,
+)
 
 
 class TestEncodeAnnotationValues:
@@ -72,3 +76,24 @@ class TestParseFieldValue:
     def test_roundtrip(self):
         uris = ["http://a", "http://b"]
         assert parse_field_value(encode_annotation_values(uris)) == uris
+
+
+class TestFindAnnotationFieldNames:
+    def test_returns_known_concepts(self):
+        fields = ["fid", "geom", "http://a", "http://b", "some_col"]
+        labels = {"http://a": "A", "http://b": "B"}
+        assert find_annotation_field_names(fields, labels) == [
+            "http://a", "http://b"
+        ]
+
+    def test_no_matches(self):
+        assert find_annotation_field_names(["fid", "geom"], {"http://a": "A"}) == []
+
+    def test_empty(self):
+        assert find_annotation_field_names([], {}) == []
+
+    def test_excludes_non_concept_fields(self):
+        fields = ["fid", "name", "http://x"]
+        assert find_annotation_field_names(fields, {"http://x": "X"}) == [
+            "http://x"
+        ]
