@@ -26,17 +26,16 @@ Each resolved item is updated in place; see the milestone commits for detail.
 | F — symbology expression blow-up | ✅ RESOLVED | M6 |
 | G — `QVariant.Map` annotation field | ✅ RESOLVED | M1 |
 | H — `selected_language` global | ⚠️ PARTIAL | M3 |
-| I — testability / no tests | ⚠️ PARTIAL (pure-layer pytest done; QGIS-bound/e2e scaffolded, unverified) | M0, M4 |
+| I — testability / no tests | ✅ RESOLVED (pure pytest + QGIS-bound pytest-qgis) | M0, M4 |
 | J — swallowed exceptions | ✅ RESOLVED | M7 |
 | K — misc nits (colour, polyhierarchy, logging) | ⚠️ PARTIAL | M6, M7 |
 | L — RDF heuristics / LOD namespace | ⚠️ PARTIAL | M8 |
 | M — reproduced multi-layer binding bug | ✅ RESOLVED | M2, M3, M7 |
 
-**Remaining (out of scope / follow-up):** **verify the QGIS-bound / end-to-end
-harness for item I** (a `pytest-qgis`-based suite + local/CI runner are
-scaffolded but not yet run against a real QGIS), persisting the LOD object
-namespace in the GeoPackage config (item L), the `libs/` sys.modules purge
-hardening, and some redundant config-table re-reads (item K) — tracked as
+**Remaining (out of scope / follow-up):** persisting the LOD object namespace
+in the GeoPackage config (item L), the `libs/` sys.modules purge hardening, and
+some redundant config-table re-reads (item K); optionally clean up the QGIS 3.44
+deprecation warnings surfaced by the new QGIS-bound tests — tracked as
 follow-ups.
 
 ---
@@ -190,7 +189,7 @@ languages can't both be handled correctly by one global).
 
 ---
 
-## I. Testability is blocked by hard Qt/QGIS coupling — ⚠️ PARTIAL (pure-layer pytest suite done; QGIS-bound/e2e harness scaffolded, unverified)
+## I. Testability is blocked by hard Qt/QGIS coupling — ✅ RESOLVED (M0 restructure; M4 de-QGIS + pytest; QGIS-bound pytest-qgis harness)
 
 **Problem.** `utils/gpkg.py` imports `from qgis.core import QgsVectorLayer,
 QgsProject` at module top (gpkg.py:10) and `utils/lod.py` imports QGIS too.
@@ -208,13 +207,12 @@ serializations and heterogeneous sources.
 
 **Status.** The pure-layer half is done (M0 restructure, M4 de-QGIS + full
 pytest suite — 67 tests, green in CI). The **QGIS-bound / end-to-end half is
-scaffolded but not yet verified**: a `pytest-qgis`-based harness
-(`tests/test_qgis_plugin.py`), an install script and a local/CI runner
+now also implemented and verified**: a `pytest-qgis`-based suite
+(`tests/test_qgis_plugin.py`), an install + uv-venv runner
 (`scripts/install_qgis_ubuntu.sh`, `scripts/run_qgis_tests.sh`), and a
-`qgis-tests` CI job are in place (see `refactoring.md`, "QGIS-bound / E2E
-harness — implementation status"). It still needs to be run against a real
-QGIS runtime and any API mismatches fixed. This is the remaining follow-up for
-item I.
+`qgis-tests` CI job are in place and pass against a real QGIS 3.44 LTR runtime
+(see `refactoring.md`, "QGIS-bound / E2E harness — implementation status").
+Residual noise is limited to QGIS 3.44 deprecation warnings, not failures.
 
 ---
 

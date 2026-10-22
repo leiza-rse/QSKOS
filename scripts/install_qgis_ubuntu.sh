@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # install_qgis_ubuntu.sh
-# qskos QGIS Plugin - install QGIS (LTR) + python3-qgis and pytest-qgis on
-# Ubuntu, for running the QGIS-bound test suite (tests/test_qgis_plugin.py).
+# qskos QGIS Plugin - install QGIS (LTR) + python3-qgis and create a uv venv
+# with pytest + pytest-qgis for the QGIS-bound test suite
+# (tests/test_qgis_plugin.py).
 #
-# Works both in WSL and in a GitHub Actions Ubuntu runner. Requires sudo.
+# Works both in WSL and in a GitHub Actions Ubuntu runner. Requires sudo
+# (for the apt install of QGIS). The test tooling is installed into a dedicated
+# uv venv (--system-site-packages so it sees QGIS) — the global Python is left
+# untouched.
 #
 # Usage:  sudo scripts/install_qgis_ubuntu.sh
 #
@@ -12,10 +16,12 @@
 #
 # Installs:
 #   - qgis + python3-qgis from the OSGeo LTR apt repo
-#   - pytest + pytest-qgis into QGIS's own Python (site-packages)
-#     so `python3 -m pytest` uses real QGIS objects.
+#   - a uv venv at .venv-qgis based on QGIS's Python with pytest + pytest-qgis
 
 set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV_DIR="${VENV_DIR:-$REPO_ROOT/.venv-qgis}"
 
 UBUNTU_CODENAME="${UBUNTU_CODENAME:-}"
 if [ -z "$UBUNTU_CODENAME" ]; then
@@ -48,18 +54,21 @@ apt-get update
 echo "==> Installing qgis + python3-qgis"
 apt-get install -y --no-install-recommends qgis python3-qgis
 
-# Identify QGIS's Python so we can pip into the right interpreter.
-PYBIN="${QGIS_PYTHON:-}"
-if [ -z "$PYBIN" ]; then
-    # Debian/Ubuntu package puts the QGIS python at /usr/bin/python3 (system).
-    PYBIN="$(command -v python3)"
-fi
-echo "==> QGIS python: $PYBIN"
+# QGIS's Python — the system interpreter that python3-qgis installs into.
+PYBIN="${QGIS_PYTHON:-$(command -v python3)}"
+echo "==> QGIS python: $PYBIN ($("$PYBIN" --version))"
 
-echo "==> Installing pytest + pytest-qgis into QGIS python"
-"$PYBIN" -m pip install --upgrade pip
-# Ubuntu 24.04+ marks the system Python as externally-managed (PEP 668);
-# --break-system-packages lets us install into QGIS's system interpreter.
-"$PYBIN" -m pip install --break-system-packages pytest pytest-qgis
+if ! command -v uv >/dev/null 2>&1; then
+    echo "==> uv not found — installing via pipx"
+    "$PYBIN" -m pip install --user --break-system-packages pipx
+    "$PYBIN" -m pipx ensurepath 2>/dev/null || true
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+echo "==> Creating uv venv at $VENV_DIR (based on $PYBIN)"
+uv venv --python "$PYBIN" --system-site-packages "$VENV_DIR"
+
+echo "==> Installing pytest + pytest-qgis into the venv"
+VIRTUAL_ENV="$VENV_DIR" uv pip install pytest pytest-qgis
 
 echo "==> Done. Run tests with:  scripts/run_qgis_tests.sh"

@@ -89,7 +89,7 @@ tests/
 
 Run: `python -m pytest tests/` (no QGIS required).
 
-### QGIS-bound parts (item I) — 🚧 SCAFFOLDED, not yet verified
+### QGIS-bound parts (item I) — ✅ VERIFIED (pytest-qgis, real QGIS 3.44 LTR)
 
 The remaining QGIS-touching code (field creation, editor widgets, symbology
 renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
@@ -104,7 +104,7 @@ renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
    the state machine (M3) and `AnnotationFieldManager` (M2) without a QGIS
    runtime.
 
-### End-to-end testing — is there a "Playwright for QGIS"? — 🚧 SCAFFOLDED, not yet verified
+### End-to-end testing — is there a "Playwright for QGIS"? — ✅ VERIFIED (pytest-qgis, real QGIS 3.44 LTR)
 
 There is no browser, so Playwright does not apply directly. But the QGIS
 ecosystem has equivalent tooling for driving the real application end-to-end:
@@ -139,14 +139,13 @@ assessment is worried about.
 > **Status: milestones M0–M8 are implemented** for the pure/unit layers — each
 > was landed as its own commit with the pytest suite green, and the assessment
 > (`context/assessment.md`) is updated in place. The QGIS-bound / end-to-end
-> harness is **scaffolded** (see below) but **not yet verified against a real
-> QGIS runtime** — that requires installing QGIS and running
-> `scripts/run_qgis_tests.sh` (locally in WSL and/or via the `qgis-tests` CI
-> job).
+> harness is **implemented and verified** against a real QGIS 3.44 LTR runtime
+> (5 QGIS-bound tests green, plus the 67 pure tests). See the section below.
 
-### QGIS-bound / E2E harness — implementation status (item I)
+### QGIS-bound / E2E harness — implementation status (item I) — ✅ VERIFIED
 
-Scaffolded files:
+Implemented and verified against QGIS 3.44.15 LTR (PyQt5/Qt5), run headless
+with `QT_QPA_PLATFORM=offscreen`:
 
 - `tests/test_qgis_plugin.py` — QGIS-bound tests run via **pytest-qgis**
   (offscreen, real `QgsVectorLayer`, real plugin dock widget):
@@ -158,25 +157,31 @@ Scaffolded files:
   - Guarded by `pytest.importorskip("pytest_qgis")`, so the plain `uv run
     pytest` (no QGIS) skips it rather than failing.
 - `scripts/install_qgis_ubuntu.sh` — installs `qgis` + `python3-qgis` from the
-  OSGeo apt repo and `pytest` + `pytest-qgis` into QGIS's Python. Works in WSL
-  and in the CI runner (`sudo UBUNTU_CODENAME=noble ...`).
-- `scripts/run_qgis_tests.sh` — runs `tests/test_qgis_plugin.py` under QGIS's
-  `python3 -m pytest` with `QT_QPA_PLATFORM=offscreen` and the bundled libs on
-  `PYTHONPATH`. Same script is used locally (WSL) and in CI.
+  OSGeo **LTR** apt repo (LTR is required: the plugin imports PyQt5, and QGIS 4.x
+  is Qt6), then creates a dedicated **uv venv** (`.venv-qgis`) based on QGIS's
+  Python with `--system-site-packages` and installs `pytest` + `pytest-qgis`
+  into it. The global Python is left untouched — no pip pollution.
+- `scripts/run_qgis_tests.sh` — runs `tests/test_qgis_plugin.py` with the
+  `.venv-qgis` interpreter (offscreen, bundled libs on `PYTHONPATH`). Same
+  script is used locally (WSL) and in CI.
 - `.github/workflows/test.yml` — new **`qgis-tests`** job that installs QGIS
   and runs the harness on every push/PR.
 
 How to run locally (WSL):
 
 ```
-sudo scripts/install_qgis_ubuntu.sh     # once: installs QGIS + pytest-qgis
+sudo scripts/install_qgis_ubuntu.sh     # once: installs QGIS + creates .venv-qgis
 scripts/run_qgis_tests.sh               # runs the QGIS-bound suite (offscreen)
 ```
 
-> **Still to do** — verify the harness against a real QGIS runtime (boot the
-> WSL/CI QGIS), fix any API mismatches surfaced, and optionally extend the
-> scenario with a Qt `QTest`-driven dock-widget interaction test (click a
-> concept in the tree → field created via `on_tree_item_changed`).
+> **Known noise (not failures):** a few `DeprecationWarning`s surfaced — QGIS
+> 3.44 deprecates `QgsMapLayerComboBox.setFilters()` (in `qskos/tabs/layer.py`)
+> and the `QgsField(..., QVariant.String)` constructor (in
+> `qskos/utils/annotation.py` and the test helpers). These are pre-existing and
+> out of scope for the harness; optionally worth a cleanup pass.
+>
+> **Possible follow-up:** a Qt `QTest`-driven dock-widget interaction test
+> (click a concept in the tree → field created via `on_tree_item_changed`).
 
 ### M0 — ✅ DONE — Repo restructure into `qskos/` subdir (testability prerequisite)
 

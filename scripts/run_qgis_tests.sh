@@ -8,15 +8,22 @@
 #
 # Usage:  scripts/run_qgis_tests.sh [pytest args...]
 #
-# Requires: qgis + python3-qgis + pytest + pytest-qgis installed (see
-# scripts/install_qgis_ubuntu.sh). QT_QPA_PLATFORM=offscreen runs headless.
+# Requires: QGIS installed and a uv venv at .venv-qgis with pytest + pytest-qgis
+# (see scripts/install_qgis_ubuntu.sh). QT_QPA_PLATFORM=offscreen runs headless.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-PYBIN="${QGIS_PYTHON:-$(command -v python3)}"
+VENV_DIR="${VENV_DIR:-$REPO_ROOT/.venv-qgis}"
+PYBIN="$VENV_DIR/bin/python"
+
+if [ ! -x "$PYBIN" ]; then
+    echo "error: QGIS test venv not found at $PYBIN" >&2
+    echo "Run:  sudo scripts/install_qgis_ubuntu.sh" >&2
+    exit 1
+fi
 
 echo "==> Running QGIS-bound tests with $PYBIN (offscreen)"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
