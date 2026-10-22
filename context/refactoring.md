@@ -89,7 +89,7 @@ tests/
 
 Run: `python -m pytest tests/` (no QGIS required).
 
-### QGIS-bound parts (item I)
+### QGIS-bound parts (item I) — ⚠️ NOT YET IMPLEMENTED
 
 The remaining QGIS-touching code (field creation, editor widgets, symbology
 renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
@@ -104,7 +104,7 @@ renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
    the state machine (M3) and `AnnotationFieldManager` (M2) without a QGIS
    runtime.
 
-### End-to-end testing — is there a "Playwright for QGIS"?
+### End-to-end testing — is there a "Playwright for QGIS"? — ⚠️ NOT YET IMPLEMENTED
 
 There is no browser, so Playwright does not apply directly. But the QGIS
 ecosystem has equivalent tooling for driving the real application end-to-end:
@@ -136,11 +136,13 @@ assessment is worried about.
 
 ## Milestones
 
-> **Status: all milestones (M0–M8) are implemented.** Each was landed as its
-> own commit with the pytest suite green; the assessment (`context/assessment.md`)
-> is updated in place to mark the corresponding items **✅ RESOLVED** (see its
-> "Resolution status" table). Remaining items are follow-ups tracked there, not
-> part of these milestones.
+> **Status: milestones M0–M8 are implemented** for the pure/unit layers — each
+> was landed as its own commit with the pytest suite green, and the assessment
+> (`context/assessment.md`) is updated in place. **However, the QGIS-bound and
+> end-to-end testing sections below are documented but NOT yet implemented**:
+> no `pytest-qgis` / `qgis_testrunner` / Qt `QTest` scenario exists, and there is
+> no headless-QGIS CI job. That remains the outstanding follow-up (see the
+> "QGIS-bound parts" and "End-to-end testing" sections and assessment item I).
 
 ### M0 — ✅ DONE — Repo restructure into `qskos/` subdir (testability prerequisite)
 
