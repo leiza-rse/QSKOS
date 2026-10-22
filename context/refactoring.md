@@ -136,7 +136,13 @@ assessment is worried about.
 
 ## Milestones
 
-### M0 — Repo restructure into `qskos/` subdir (testability prerequisite)
+> **Status: all milestones (M0–M8) are implemented.** Each was landed as its
+> own commit with the pytest suite green; the assessment (`context/assessment.md`)
+> is updated in place to mark the corresponding items **✅ RESOLVED** (see its
+> "Resolution status" table). Remaining items are follow-ups tracked there, not
+> part of these milestones.
+
+### M0 — ✅ DONE — Repo restructure into `qskos/` subdir (testability prerequisite)
 
 - Move the plugin package (`__init__.py`, `metadata.txt`, `utils/`, `tabs/`,
   `libs/`, sample data) into a `qskos/` subdirectory.
@@ -149,7 +155,7 @@ assessment is worried about.
   repo root. QGIS only needs `metadata.txt` + `__init__.py` at the installed
   folder's root.
 
-### M1 — Canonical JSON annotation storage (A, G)
+### M1 — ✅ DONE — Canonical JSON annotation storage (A, G)
 
 - `utils/fields.py`: add `encode_annotation_values(list[str]) -> str` (JSON) and
   keep `parse_field_value` as a lenient reader (accept JSON, list, pipe, single).
@@ -157,7 +163,7 @@ assessment is worried about.
   `QVariant.Map`) with JSON default `"[]"`.
 - Tests: `test_fields.py`.
 
-### M2 — Extract `AnnotationFieldManager` (B)
+### M2 — ✅ DONE — Extract `AnnotationFieldManager` (B)
 
 - New `utils/annotation.py` (pure-ish) + a QGIS adapter owning:
   1. detecting annotation fields **from the config table** + bound vocab (not
@@ -171,7 +177,7 @@ assessment is worried about.
   lookups using a single URI→label dict built once.
 - Tests: `test_annotation.py` (with adapter fakes / pytest-qgis).
 
-### M3 — `QskosState` + explicit injection (D, M)
+### M3 — ✅ DONE — `QskosState` + explicit injection (D, M)
 
 - New `state.py` defining a `QskosState` dataclass (`active_gpkg_path`,
   `current_feature_layer`, `current_vocab_layer`, `current_vocab_scheme`,
@@ -181,7 +187,7 @@ assessment is worried about.
 - Fixes the reproduced multi-layer binding bug.
 - Tests: `test_state.py` (state transitions, no QGIS).
 
-### M4 — De-QGIS pure utils + full pytest suite (I)
+### M4 — ✅ DONE — De-QGIS pure utils + full pytest suite (I)
 
 - `utils/gpkg.py`: keep pure SQLite funcs (config CRUD, import) QGIS-free; move
   `ensure_vocab_layer_loaded` / path-helper-that-needs-QGIS into a thin adapter.
@@ -192,7 +198,7 @@ assessment is worried about.
 - Full `tests/` suite runnable standalone.
 - Add CI (GitHub Actions) running `pytest`.
 
-### M5 — Hierarchy cache + single-pass feature reads (E, C)
+### M5 — ✅ DONE — Hierarchy cache + single-pass feature reads (E, C)
 
 - Key hierarchy cache by `(gpkg path, table name, content hash/mtime)` instead
   of volatile `layer.id()`.
@@ -200,21 +206,21 @@ assessment is worried about.
 - Symbology/LOD: single `getFeatures()` pass building a `concept_uri →
   features` inverted index instead of one pass per field.
 
-### M6 — Deterministic symbology + polyhierarchy (F, K)
+### M6 — ✅ DONE — Deterministic symbology + polyhierarchy (F, K)
 
 - Stable colour derived from concept URI hash (drop `random`).
 - Ancestor walk handles multiple `broader` parents (polyhierarchy).
 - Prefer `array_intersect`/`array_contains_any` over `OR`-chained
   `array_contains`; deduplicate redundant descendant re-listing.
 
-### M7 — Error handling + logging (J, K)
+### M7 — ✅ DONE — Error handling + logging (J, K)
 
 - Replace `print()` with `QgsMessageLog`.
 - Replace bare `except: pass/continue` with specific catches + logging in
   symbology, LOD export, and layer tree load.
 - Doc/pin the `libs/` rdflib purge hack.
 
-### M8 — Tighten RDF heuristics (L)
+### M8 — ✅ DONE — Tighten RDF heuristics (L)
 
 - Per-concept `narrower` fallback (not global).
 - Prefer subjects typed `skos:Concept`; keep prefLabel fallback as last resort.

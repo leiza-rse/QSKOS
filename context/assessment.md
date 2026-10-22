@@ -10,7 +10,35 @@ by theme; each item says *what's wrong* and *what to do instead*.
 
 ---
 
-## A. The `utils/fields.py` heuristics are a band-aid on a bad data model
+## Resolution status
+
+Items below marked **✅ RESOLVED** have been addressed by the refactor
+documented in [`context/refactoring.md`](./refactoring.md) (milestones M0–M8).
+Each resolved item is updated in place; see the milestone commits for detail.
+
+| Item | Status | Milestone |
+|------|--------|-----------|
+| A — fields heuristics / data model | ✅ RESOLVED | M1, M2 |
+| B — duplicated `tabs/layer.py` logic | ✅ RESOLVED | M2 |
+| C — per-concept feature queries | ✅ RESOLVED | M2, M5 |
+| D — shared mutable global state | ✅ RESOLVED | M3 |
+| E — hierarchy cache keying | ✅ RESOLVED | M5 |
+| F — symbology expression blow-up | ✅ RESOLVED | M6 |
+| G — `QVariant.Map` annotation field | ✅ RESOLVED | M1 |
+| H — `selected_language` global | ⚠️ PARTIAL | M3 |
+| I — testability / no tests | ✅ RESOLVED | M0, M4 |
+| J — swallowed exceptions | ✅ RESOLVED | M7 |
+| K — misc nits (colour, polyhierarchy, logging) | ⚠️ PARTIAL | M6, M7 |
+| L — RDF heuristics / LOD namespace | ⚠️ PARTIAL | M8 |
+| M — reproduced multi-layer binding bug | ✅ RESOLVED | M2, M3, M7 |
+
+**Remaining (out of scope / follow-up):** persisting the LOD object namespace
+in the GeoPackage config (item L), the `libs/` sys.modules purge hardening, and
+some redundant config-table re-reads (item K) — tracked as follow-ups.
+
+---
+
+## A. The `utils/fields.py` heuristics are a band-aid on a bad data model — ✅ RESOLVED (M1 canonical JSON storage; M2 config-based detection)
 
 **Problem.** `parse_field_value` (utils/fields.py:9) is a cascade of guesses:
 "try JSON, try PostgreSQL array, try pipe-separated, else single value." The
@@ -35,7 +63,7 @@ plugin already has.
 
 ---
 
-## B. Duplicated, drifting logic in `tabs/layer.py`
+## B. Duplicated, drifting logic in `tabs/layer.py` — ✅ RESOLVED (M2 `AnnotationFieldManager`)
 
 **Problem.** `layer.py` is ~612 lines — by far the largest file — and contains
 obvious copy-paste with silent drift:
@@ -63,7 +91,7 @@ vocab layer into a URI→label dict once.
 
 ---
 
-## C. Feature queries looped per-concept — O(features × concepts)
+## C. Feature queries looped per-concept — O(features × concepts) — ✅ RESOLVED (M2/M5 single-pass reads)
 
 **Problem.** Symbology (symbology.py:195) iterates `layer.getFeatures()` once per
 annotation field, and inside each feature iterates parsed values. Ancestor
@@ -78,7 +106,7 @@ not once-per-field.
 
 ---
 
-## D. Shared mutable global state on the plugin object
+## D. Shared mutable global state on the plugin object — ✅ RESOLVED (M3 `QskosState`)
 
 **Problem.** `__init__.py` exposes a grab-bag of mutable state
 (`current_feature_layer`, `current_vocab_layer`, `current_vocab_scheme`,
@@ -95,7 +123,7 @@ constructing a fake plugin.
 
 ---
 
-## E. The hierarchy "cache" is a misleading name for a recompute-every-time
+## E. The hierarchy "cache" is a misleading name for a recompute-every-time — ✅ RESOLVED (M5 keyed by gpkg+table, invalidated on import)
 
 **Problem.** `get_hierarchy_for_layer` (__init__.py:64) caches by `layer.id()`
 but layer IDs change on project reload — which is *why* it works, but it means
@@ -112,7 +140,7 @@ the GeoPackage config rather than recomputing.
 
 ---
 
-## F. Symbology rule expression can blow up
+## F. Symbology rule expression can blow up — ✅ RESOLVED (M6 `array_intersect`)
 
 **Problem.** Each rule's filter is `" OR ".join(array_contains(...) for u in all_desc)`
 (symbology.py:245). For a concept with thousands of descendants, that's a
@@ -128,7 +156,7 @@ at multiple levels, which is redundant.
 
 ---
 
-## G. Annotation values in `QVariant.Map` is an odd choice
+## G. Annotation values in `QVariant.Map` is an odd choice — ✅ RESOLVED (M1 text/JSON field)
 
 **Problem.** `create_annotation_field` (layer.py:524) creates a `Map`-typed
 field but then relies on a `QgsDefaultValue("array()")` and multi-select
@@ -143,7 +171,7 @@ consistently. This removes most of section A's guesswork at the source.
 
 ---
 
-## H. `selected_language` is a plugin-global that should be per-vocabulary
+## H. `selected_language` is a plugin-global that should be per-vocabulary — ⚠️ PARTIAL (moved to state; per-vocab language already stored in config)
 
 **Problem.** `self.plugin.selected_language` (__init__.py:48) is a single global
 set in the vocabulary tab. It's used at import time to bake one language into
@@ -159,7 +187,7 @@ languages can't both be handled correctly by one global).
 
 ---
 
-## I. Testability is blocked by hard Qt/QGIS coupling
+## I. Testability is blocked by hard Qt/QGIS coupling — ✅ RESOLVED (M0 restructure; M4 de-QGIS + pytest suite)
 
 **Problem.** `utils/gpkg.py` imports `from qgis.core import QgsVectorLayer,
 QgsProject` at module top (gpkg.py:10) and `utils/lod.py` imports QGIS too.
@@ -177,7 +205,7 @@ serializations and heterogeneous sources.
 
 ---
 
-## J. Error handling: broad `except: pass` / `continue` swallow real bugs
+## J. Error handling: broad `except: pass` / `continue` swallow real bugs — ✅ RESOLVED (M7 `QgsMessageLog`)
 
 **Problem.** Multiple spots catch everything and continue silently
 (e.g. `_load_tree_for_item`'s bare `except Exception: self._clear_tree()`
@@ -193,7 +221,7 @@ produce subtly wrong output.
 
 ---
 
-## K. Misc smaller nits
+## K. Misc smaller nits — ⚠️ PARTIAL (colours/polyhierarchy/logging done; libs purge & config re-reads remain)
 
 - **Bundled `libs/` hack** (__init__.py:8-31): purging `rdflib` from
   `sys.modules` to force the bundled copy is fragile and version-sensitive.
@@ -213,7 +241,7 @@ produce subtly wrong output.
 
 ---
 
-## L. New-code observations (RDF ingestion & LOD namespace)
+## L. New-code observations (RDF ingestion & LOD namespace) — ⚠️ PARTIAL (narrower/typing/comment done; namespace persistence remains)
 
 These concern the recently added/expanded features and are *lower severity*
 — they are improvements to otherwise welcome functionality.
@@ -241,6 +269,70 @@ These concern the recently added/expanded features and are *lower severity*
 - **Two LOD export entry points duplicate the file-dialog + export flow**
   (`_export_one_layer` and `on_export_all_clicked`). Extract the shared
   "validate namespace → choose path → export → report" sequence.
+
+---
+
+## M. REPRODUCED BUG — Multi-layer binding to the same vocabulary breaks the tree & annotation widgets — ✅ RESOLVED (M2 explicit field args, M3 state object, M7 logging)
+
+**Reported symptom (user, 2026-10-21).** With **two feature layers** in the same
+GeoPackage, after importing a vocabulary:
+1. Binding the vocabulary to the **first** layer works — the tree renders, concepts
+   are checkable as annotation fields.
+2. Binding the **same** vocabulary to the **second** layer → **no tree appears**.
+3. After that, the tree is also **no longer visible for the first layer**.
+4. Existing annotation fields on the first layer appear to lose their selectable
+   values (the ValueRelation widget shows nothing when annotating).
+
+**Root cause (high confidence): shared mutable global state on the plugin object.**
+This is the concrete manifestation of item **D** below. The plugin stores a single
+`current_feature_layer`, `current_vocab_layer`, `current_vocab_scheme`
+(`__init__.py:45-47`) that every layer tab reads *and writes* (`tabs/layer.py`).
+Once a second feature layer is bound to the **same** vocabulary, these globals
+describe whichever layer was touched last, so the state for the previous layer is
+clobbered. Both the tree rendering (`_load_tree_for_item` → `load_concept_tree`) and
+annotation field creation (`create_annotation_field`, `tabs/layer.py:512`) resolve
+their target layer from these globals, so the collision breaks both.
+
+**Contributing factors.**
+- **Single shared tree widget** (`self.tree_view`) showing "the" hierarchy for one
+  (feature layer, vocab) pair, keyed off the global `current_feature_layer` +
+  `current_vocab_scheme`. It is not per-layer; switching/rebinding state can leave it
+  empty (`_load_tree_for_item` early-returns → `_clear_tree()`, `tabs/layer.py:124-133`).
+- **`create_annotation_field` uses the globals** (`tabs/layer.py:517,522,545`) to pick
+  the feature layer and the vocab layer for the ValueRelation (`"Layer":
+  current_vocab_layer.id()`). If `current_vocab_layer`/`current_feature_layer` are
+  stale (pointing at the other layer), a checked concept is added to the wrong layer,
+  or the ValueRelation references the wrong/old vocab layer id → no selectable values.
+- **ValueRelation `config["Layer"]` is a volatile `vocab_layer.id()`** captured at
+  creation (`tabs/layer.py:545`). If the vocab table layer is ever re-added with a new
+  id (e.g. project reload), previously created fields reference a stale id and render
+  empty until `reinitialize_all_annotation_fields_for_layer` runs again — which only
+  happens on a layer change / tree load, and itself relies on the same fragile globals
+  (`tabs/layer.py:375-434`).
+- **Swallowed exceptions** (item **J**): `_load_tree_for_item` wraps the whole tree
+  build in a bare `except Exception: self._clear_tree()` (`tabs/layer.py:141-142`), and
+  `reinitialize_all_annotation_fields_for_layer` does `except: continue`
+  (`tabs/layer.py:432-434`). Any failure during the second-layer bind silently clears
+  the tree with no message, matching "no tree appeared."
+- **Type-sniffing heuristics** (item **A**): `reinitialize_all_annotation_fields_for_layer`
+  guesses which fields are annotations via `field_type == QVariant.Map / String /
+  StringList / 11` (`tabs/layer.py:403`) rather than consulting the config table, so
+  reconfiguration of existing fields is unreliable.
+
+**How to fix (while refactoring, per item D):**
+- Introduce a typed state object (e.g. `QskosState`) so `current_feature_layer`,
+  `current_vocab_layer`, `current_vocab_scheme` become explicit, per-context values with
+  change signals instead of three ad-hoc globals. Managers receive dependencies
+  explicitly rather than fishing them off `self.plugin`.
+- Make the annotation-field creation/reconfiguration take `(feature_layer, vocab_layer,
+  concept_uri)` as explicit arguments (see item B: extract `AnnotationFieldManager`),
+  and derive the ValueRelation target layer from the passed vocab layer, not a global.
+- Detect annotation fields from the config table + the bound vocab rather than by
+  field-type sniffing (items A/B).
+- Replace the swallowed exceptions with `QgsMessageLog` logging so "no tree appeared"
+  can't hide a real failure (item J).
+- Persist/derive the ValueRelation `Layer` reference robustly (by GPKG path + table
+  name, resolved at render time) so it survives vocab-layer id changes.
 
 ---
 
