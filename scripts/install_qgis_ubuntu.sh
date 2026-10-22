@@ -58,17 +58,47 @@ apt-get install -y --no-install-recommends qgis python3-qgis
 PYBIN="${QGIS_PYTHON:-$(command -v python3)}"
 echo "==> QGIS python: $PYBIN ($("$PYBIN" --version))"
 
-if ! command -v uv >/dev/null 2>&1; then
-    echo "==> uv not found — installing via pipx"
-    "$PYBIN" -m pip install --user --break-system-packages pipx
-    "$PYBIN" -m pipx ensurepath 2>/dev/null || true
-    export PATH="$HOME/.local/bin:$PATH"
+# When run via sudo, $HOME is root's; the invoking user's uv lives in their
+# own home. Resolve it so we find the right per-user uv.
+REAL_USER="${SUDO_USER:-$(id -un)}"
+REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+if [ -z "$REAL_HOME" ]; then
+    REAL_HOME="$HOME"
 fi
 
+# Locate uv. It is often installed per-user (~/.local/bin), which is not on
+# root's PATH under sudo, so search it explicitly.
+UV_BIN="${UV_BIN:-$(command -v uv || true)}"
+if [ -z "$UV_BIN" ] && [ -x "$REAL_HOME/.local/bin/uv" ]; then
+    UV_BIN="$REAL_HOME/.local/bin/uv"
+fi
+if [ -z "$UV_BIN" ] && [ -x "/usr/local/bin/uv" ]; then
+    UV_BIN="/usr/local/bin/uv"
+fi
+if [ -z "$UV_BIN" ]; then
+    echo "error: uv not found. Install it first, e.g.:" >&2
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    echo "then re-run:  sudo scripts/install_qgis_ubuntu.sh" >&2
+    exit 1
+fi
+echo "==> uv: $UV_BIN"
+
+# Run the venv + pip steps as the invoking user (not root) so .venv-qgis is
+# owned by the developer, not root. 'sudo -u -H' sets HOME to their home so uv
+# uses the right cache/install locations.
+run_as_user() {
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        sudo -u "$SUDO_USER" -H env "UV_BIN=$UV_BIN" "VENV_DIR=$VENV_DIR" \
+            "PYBIN=$PYBIN" "$@"
+    else
+        env "UV_BIN=$UV_BIN" "VENV_DIR=$VENV_DIR" "PYBIN=$PYBIN" "$@"
+    fi
+}
+
 echo "==> Creating uv venv at $VENV_DIR (based on $PYBIN)"
-uv venv --python "$PYBIN" --system-site-packages "$VENV_DIR"
+run_as_user bash -c '"$UV_BIN" venv --python "$PYBIN" --system-site-packages "$VENV_DIR"'
 
 echo "==> Installing pytest + pytest-qgis into the venv"
-VIRTUAL_ENV="$VENV_DIR" uv pip install pytest pytest-qgis
+run_as_user bash -c 'VIRTUAL_ENV="$VENV_DIR" "$UV_BIN" pip install pytest pytest-qgis'
 
 echo "==> Done. Run tests with:  scripts/run_qgis_tests.sh"
