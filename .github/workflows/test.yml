@@ -21,3 +21,19 @@ jobs:
 
       - name: Run unit tests (no QGIS required)
         run: uv run pytest
+
+  qgis-tests:
+    # QGIS-bound / end-to-end tests run inside a real (headless) QGIS via
+    # pytest-qgis. See scripts/install_qgis_ubuntu.sh and run_qgis_tests.sh.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QGIS + python3-qgis + pytest-qgis
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl gpg ca-certificates
+          sudo UBUNTU_CODENAME=noble scripts/install_qgis_ubuntu.sh
+
+      - name: Run QGIS-bound tests (offscreen)
+        run: scripts/run_qgis_tests.sh -q

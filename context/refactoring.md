@@ -89,7 +89,7 @@ tests/
 
 Run: `python -m pytest tests/` (no QGIS required).
 
-### QGIS-bound parts (item I) — ⚠️ NOT YET IMPLEMENTED
+### QGIS-bound parts (item I) — 🚧 SCAFFOLDED, not yet verified
 
 The remaining QGIS-touching code (field creation, editor widgets, symbology
 renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
@@ -104,7 +104,7 @@ renderer, ValueRelation) cannot run in plain pytest. Two complementary options:
    the state machine (M3) and `AnnotationFieldManager` (M2) without a QGIS
    runtime.
 
-### End-to-end testing — is there a "Playwright for QGIS"? — ⚠️ NOT YET IMPLEMENTED
+### End-to-end testing — is there a "Playwright for QGIS"? — 🚧 SCAFFOLDED, not yet verified
 
 There is no browser, so Playwright does not apply directly. But the QGIS
 ecosystem has equivalent tooling for driving the real application end-to-end:
@@ -138,11 +138,45 @@ assessment is worried about.
 
 > **Status: milestones M0–M8 are implemented** for the pure/unit layers — each
 > was landed as its own commit with the pytest suite green, and the assessment
-> (`context/assessment.md`) is updated in place. **However, the QGIS-bound and
-> end-to-end testing sections below are documented but NOT yet implemented**:
-> no `pytest-qgis` / `qgis_testrunner` / Qt `QTest` scenario exists, and there is
-> no headless-QGIS CI job. That remains the outstanding follow-up (see the
-> "QGIS-bound parts" and "End-to-end testing" sections and assessment item I).
+> (`context/assessment.md`) is updated in place. The QGIS-bound / end-to-end
+> harness is **scaffolded** (see below) but **not yet verified against a real
+> QGIS runtime** — that requires installing QGIS and running
+> `scripts/run_qgis_tests.sh` (locally in WSL and/or via the `qgis-tests` CI
+> job).
+
+### QGIS-bound / E2E harness — implementation status (item I)
+
+Scaffolded files:
+
+- `tests/test_qgis_plugin.py` — QGIS-bound tests run via **pytest-qgis**
+  (offscreen, real `QgsVectorLayer`, real plugin dock widget):
+  - plugin boot (`classFactory` + `initGui()` builds the 5-tab dock),
+  - `create_annotation_field` round-trips on a real layer (ValueRelation
+    editor widget present; idempotent on re-create),
+  - `build_value_relation_config` filter lists descendants,
+  - multi-layer binding regression guard (assessment item M).
+  - Guarded by `pytest.importorskip("pytest_qgis")`, so the plain `uv run
+    pytest` (no QGIS) skips it rather than failing.
+- `scripts/install_qgis_ubuntu.sh` — installs `qgis` + `python3-qgis` from the
+  OSGeo apt repo and `pytest` + `pytest-qgis` into QGIS's Python. Works in WSL
+  and in the CI runner (`sudo UBUNTU_CODENAME=noble ...`).
+- `scripts/run_qgis_tests.sh` — runs `tests/test_qgis_plugin.py` under QGIS's
+  `python3 -m pytest` with `QT_QPA_PLATFORM=offscreen` and the bundled libs on
+  `PYTHONPATH`. Same script is used locally (WSL) and in CI.
+- `.github/workflows/test.yml` — new **`qgis-tests`** job that installs QGIS
+  and runs the harness on every push/PR.
+
+How to run locally (WSL):
+
+```
+sudo scripts/install_qgis_ubuntu.sh     # once: installs QGIS + pytest-qgis
+scripts/run_qgis_tests.sh               # runs the QGIS-bound suite (offscreen)
+```
+
+> **Still to do** — verify the harness against a real QGIS runtime (boot the
+> WSL/CI QGIS), fix any API mismatches surfaced, and optionally extend the
+> scenario with a Qt `QTest`-driven dock-widget interaction test (click a
+> concept in the tree → field created via `on_tree_item_changed`).
 
 ### M0 — ✅ DONE — Repo restructure into `qskos/` subdir (testability prerequisite)
 
