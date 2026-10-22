@@ -96,7 +96,8 @@ run_as_user() {
 }
 
 echo "==> Creating uv venv at $VENV_DIR (based on $PYBIN)"
-run_as_user bash -c '"$UV_BIN" venv --python "$PYBIN" --system-site-packages "$VENV_DIR"'
+# --clear replaces any pre-existing venv without prompting (needed for CI).
+run_as_user bash -c '"$UV_BIN" venv --clear --python "$PYBIN" --system-site-packages "$VENV_DIR"'
 
 echo "==> Installing pytest + pytest-qgis into the venv"
 run_as_user bash -c 'VIRTUAL_ENV="$VENV_DIR" "$UV_BIN" pip install pytest pytest-qgis'
