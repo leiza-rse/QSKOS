@@ -145,33 +145,47 @@ assessment is worried about.
 ### QGIS-bound / E2E harness — implementation status (item I) — ✅ VERIFIED
 
 Implemented and verified against QGIS 3.44.15 LTR (PyQt5/Qt5), run headless
-with `QT_QPA_PLATFORM=offscreen`:
+with `QT_QPA_PLATFORM=offscreen`. **12 QGIS-bound tests green** plus the 67
+pure tests.
 
-- `tests/test_qgis_plugin.py` — QGIS-bound tests run via **pytest-qgis**
-  (offscreen, real `QgsVectorLayer`, real plugin dock widget):
-  - plugin boot (`classFactory` + `initGui()` builds the 5-tab dock),
-  - `create_annotation_field` round-trips on a real layer (ValueRelation
-    editor widget present; idempotent on re-create),
-  - `build_value_relation_config` filter lists descendants,
-  - multi-layer binding regression guard (assessment item M).
-  - Guarded by `pytest.importorskip("pytest_qgis")`, so the plain `uv run
-    pytest` (no QGIS) skips it rather than failing.
+- `tests/test_qgis_plugin.py` — fast QGIS smoke suite (plugin boot,
+  annotation-field round-trip on a real layer, ValueRelation config,
+  multi-layer field creation).
+- `tests/test_qgis_e2e.py` — full scenario mirroring the manual acceptance
+  workflow against a **real GeoPackage**:
+  - tab 1: `load_gpkg` (real flow, state + tab refresh),
+  - tab 2: vocab import via the real `on_load_vocab_clicked` callback — both a
+    controlled TTL and the bundled `Konservierungsthesaurus.ttl` (German
+    labels, language combo wiring); remote URLs need network and are left to
+    manual testing,
+  - tab 3: binding + ticking a concept in the tree via the **real signal
+    wiring** (`setCheckState` → `on_tree_item_changed` → field created),
+  - **edit regression guard**: annotate an existing feature, edit other
+    attribute values, re-edit the annotation, reload the layer from disk —
+    annotation values must survive (the pre-refactor "edit deletes values"
+    bug),
+  - second feature layer bound to the same vocab — values must stay
+    independent (assessment item M),
+  - tab 4: `generate_rule_based_symbology` on the real layer (rule-based
+    renderer with `array_intersect` filters), and `on_export_all_clicked` →
+    Turtle output validated by re-parsing with rdflib (`oa:hasTarget` triple).
 - `scripts/install_qgis_ubuntu.sh` — installs `qgis` + `python3-qgis` from the
   OSGeo **LTR** apt repo (LTR is required: the plugin imports PyQt5, and QGIS 4.x
   is Qt6), then creates a dedicated **uv venv** (`.venv-qgis`) based on QGIS's
   Python with `--system-site-packages` and installs `pytest` + `pytest-qgis`
-  into it. The global Python is left untouched — no pip pollution.
-- `scripts/run_qgis_tests.sh` — runs `tests/test_qgis_plugin.py` with the
+  into it. The global Python is left untouched — no pip pollution. Locates the
+  invoking user's uv under `sudo`, `--clear`s any existing venv.
+- `scripts/run_qgis_tests.sh` — runs both QGIS test modules with the
   `.venv-qgis` interpreter (offscreen, bundled libs on `PYTHONPATH`). Same
   script is used locally (WSL) and in CI.
-- `.github/workflows/test.yml` — new **`qgis-tests`** job that installs QGIS
-  and runs the harness on every push/PR.
+- `.github/workflows/test.yml` — **`qgis-tests`** job that installs QGIS and
+  runs the harness on every push/PR.
 
 How to run locally (WSL):
 
 ```
 sudo scripts/install_qgis_ubuntu.sh     # once: installs QGIS + creates .venv-qgis
-scripts/run_qgis_tests.sh               # runs the QGIS-bound suite (offscreen)
+scripts/run_qgis_tests.sh               # runs the QGIS-bound suites (offscreen)
 ```
 
 > **Known noise (not failures):** a few `DeprecationWarning`s surfaced — QGIS
@@ -180,8 +194,9 @@ scripts/run_qgis_tests.sh               # runs the QGIS-bound suite (offscreen)
 > `qskos/utils/annotation.py` and the test helpers). These are pre-existing and
 > out of scope for the harness; optionally worth a cleanup pass.
 >
-> **Possible follow-up:** a Qt `QTest`-driven dock-widget interaction test
-> (click a concept in the tree → field created via `on_tree_item_changed`).
+> **Not covered:** remote-URL vocab import (needs network — manual), plugin
+> uninstall/reinstall (initGui boot is the equivalent smoke), and Qt
+> `QTest`-driven clicks (slots are driven directly via the real signals).
 
 ### M0 — ✅ DONE — Repo restructure into `qskos/` subdir (testability prerequisite)
 
