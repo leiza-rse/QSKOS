@@ -1,0 +1,4 @@
+# Tools, tests and docs (the plugin itself needs none of this: it bundles rdflib in libs/).
+rdflib>=7.0
+pyshacl>=0.26
+# SVG/PNG diagrams additionally need Node.js and:  npm install -g @mermaid-js/mermaid-cli

@@ -1,0 +1,35 @@
+flowchart TB
+    CAT(["E73 Information Object<br/>(Catalog)"])
+    DS(["E73 Information Object<br/>(Dataset)"])
+    DIST(["E73 Information Object<br/>(Distribution)"])
+    LAYER(["E73 Information Object<br/>(FeatureLayer)"])
+    FEAT(["E53 Place<br/>(Feature)"])
+    GEOM(["E73 Information Object<br/>(Geometry)"])
+    CRS(["SP4 Spatial CRS<br/>(⊑ E29 Design or Procedure)"])
+    ANN(["E13 Attribute Assignment<br/>(Annotation)"])
+    OBJ(["E18 Physical Thing<br/>(E19 / E22 / ...)"])
+    FC(["E55 Type<br/>(Field concept)"])
+    VC(["E55 Type<br/>(Value concept)"])
+
+    CAT -->|P106 is composed of| DS
+    DS -->|P106 is composed of| LAYER
+    DS -->|P67 refers to| OBJ
+    FEAT -->|P157 is at rest relative to| OBJ
+    ANN -->|P140 assigned attribute to| FEAT
+    ANN -->|P141 assigned| VC
+    ANN -->|P177 assigned property of type| FC
+    GEOM -.->|"Q9 is expressed in terms of<br/>(CRMgeo, SP5, unchecked)"| CRS
+    DS -.->|"no CRM property<br/>(dcat:distribution)"| DIST
+    LAYER -.->|"no CRM property<br/>(rdfs:member)"| FEAT
+    FEAT -.->|"no CRM property<br/>(geo:hasGeometry)"| GEOM
+
+    classDef meta fill:#fbbf24,stroke:#000000,color:#000000
+    classDef cls fill:#9a3412,stroke:#000000,color:#ffffff
+    classDef real fill:#166534,stroke:#000000,color:#ffffff
+    classDef term fill:#4c1d95,stroke:#000000,color:#ffffff
+    classDef ext fill:#e2e8f0,stroke:#000000,color:#000000
+
+    class CAT,DS,DIST meta
+    class LAYER,FEAT,GEOM,CRS,ANN cls
+    class OBJ real
+    class FC,VC term

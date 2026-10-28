@@ -1,0 +1,119 @@
+@prefix as: <http://www.w3.org/ns/activitystreams#> .
+@prefix crm: <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix exv: <https://example.org/vocab/> .
+@prefix geo: <http://www.opengis.net/ont/geosparql#> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+@prefix obj: <http://w3id.org/archlink/objects/> .
+@prefix qdata: <http://data.archaeology.link/data/qskos/> .
+@prefix qskos: <http://archaeology.link/ontology/qskos#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sf: <http://www.opengis.net/ont/sf#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://data.archaeology.link/data/qskos/ann/O.34736-Top-view-polygons-1-Damage> a qskos:Annotation ;
+    qskos:attribute exv:Damage ;
+    dct:created "2026-10-28T09:00:00+00:00"^^xsd:dateTime ;
+    dct:creator <https://example.org/person/conservator-1> ;
+    as:generator <https://github.com/leiza-rse/QSKOS> ;
+    oa:hasBody exv:Abrasion,
+        exv:Crack ;
+    oa:hasTarget <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-1> ;
+    oa:motivatedBy oa:classifying .
+
+<http://data.archaeology.link/data/qskos/ann/O.34736-Top-view-polygons-1-Material> a qskos:Annotation ;
+    qskos:attribute exv:Material ;
+    dct:created "2026-10-28T09:00:00+00:00"^^xsd:dateTime ;
+    dct:creator <https://example.org/person/conservator-1> ;
+    as:generator <https://github.com/leiza-rse/QSKOS> ;
+    oa:hasBody exv:Leather ;
+    oa:hasTarget <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-1> ;
+    oa:motivatedBy oa:classifying .
+
+<http://data.archaeology.link/data/qskos/ann/O.34736-Top-view-polygons-2-Material> a qskos:Annotation ;
+    qskos:attribute exv:Material ;
+    dct:created "2026-10-28T09:00:00+00:00"^^xsd:dateTime ;
+    dct:creator <https://example.org/person/conservator-1> ;
+    as:generator <https://github.com/leiza-rse/QSKOS> ;
+    oa:hasBody exv:Textile ;
+    oa:hasTarget <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-2> ;
+    oa:motivatedBy oa:classifying .
+
+qdata:catalog a qskos:Catalog ;
+    dct:title "QSKOS exports: Condition mapping of Roman leather shoe O.34736"@en ;
+    dcat:dataset qdata:ds-Condition-mapping-of-Roman-leather-shoe-O.34736 .
+
+qdata:dist-Condition-mapping-of-Roman-leather-shoe-O.34736 a qskos:Distribution ;
+    dct:conformsTo <http://archaeology.link/ontology/qskos> ;
+    dct:identifier "example.ttl" ;
+    dct:title "Turtle export"@en ;
+    dcat:mediaType <https://www.iana.org/assignments/media-types/text/turtle> .
+
+qdata:ds-Condition-mapping-of-Roman-leather-shoe-O.34736 a qskos:Dataset ;
+    dct:conformsTo <http://archaeology.link/ontology/qskos> ;
+    dct:creator <https://example.org/person/conservator-1> ;
+    dct:description "Annotated features on the top-view orthomosaic, classified with a SKOS vocabulary."@en ;
+    dct:hasPart <http://data.archaeology.link/data/qskos/layer/O.34736-Top-view-polygons> ;
+    dct:issued "2026-10-28"^^xsd:date ;
+    dct:license <https://creativecommons.org/licenses/by-sa/4.0/> ;
+    dct:requires exv:scheme ;
+    dct:subject obj:O.34736 ;
+    dct:title "Condition mapping of Roman leather shoe O.34736"@en ;
+    dcat:distribution qdata:dist-Condition-mapping-of-Roman-leather-shoe-O.34736 ;
+    dcat:version "0.1" .
+
+<http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-3> a qskos:Feature ;
+    crm:P157_is_at_rest_relative_to obj:O.34736 ;
+    geo:hasGeometry <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-3> ;
+    oa:hasSelector <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-3> ;
+    oa:hasSource obj:O.34736 .
+
+<http://data.archaeology.link/data/qskos/layer/O.34736-Top-view-polygons> a qskos:FeatureLayer ;
+    rdfs:label "Top view - polygons" ;
+    qskos:hasAttribute exv:Damage,
+        exv:Intervention,
+        exv:Material ;
+    qskos:usesVocabulary exv:scheme ;
+    rdfs:member <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-1>,
+        <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-2>,
+        <http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-3> .
+
+<http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-2> a qskos:Feature ;
+    crm:P157_is_at_rest_relative_to obj:O.34736 ;
+    geo:hasGeometry <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-2> ;
+    oa:hasSelector <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-2> ;
+    oa:hasSource obj:O.34736 .
+
+<http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-1> a qskos:Geometry,
+        sf:Polygon ;
+    qskos:inCoordinateSystem <http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> ;
+    geo:asWKT "<http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))"^^geo:wktLiteral .
+
+<http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-2> a qskos:Geometry,
+        sf:Polygon ;
+    qskos:inCoordinateSystem <http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> ;
+    geo:asWKT "<http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> POLYGON ((50 10, 60 10, 60 20, 50 20, 50 10))"^^geo:wktLiteral .
+
+<http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-3> a qskos:Geometry,
+        sf:Polygon ;
+    qskos:inCoordinateSystem <http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> ;
+    geo:asWKT "<http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> POLYGON ((0 0, 5 0, 5 5, 0 5, 0 0))"^^geo:wktLiteral .
+
+exv:scheme a skos:ConceptScheme .
+
+<http://data.archaeology.link/data/qskos/crs/O.34736-Top-view-polygons> a qskos:LocalCoordinateSystem ;
+    rdfs:label "Local 2D system, Top view - polygons (O.34736)" ;
+    qskos:definedByRaster "O.34736_top_ortho.tif" .
+
+<http://data.archaeology.link/data/qskos/feature/O.34736-Top-view-polygons-1> a qskos:Feature ;
+    crm:P157_is_at_rest_relative_to obj:O.34736 ;
+    geo:hasGeometry <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-1> ;
+    oa:hasSelector <http://data.archaeology.link/data/qskos/geom/O.34736-Top-view-polygons-1> ;
+    oa:hasSource obj:O.34736 .
+
+obj:O.34736 a qskos:MappedObject,
+        crm:E22_Human-Made_Object ;
+    rdfs:label "Lederschuh" .
+

@@ -1,0 +1,5 @@
+{
+  "theme": "default",
+  "handDrawnSeed": 1,
+  "flowchart": { "htmlLabels": true, "curve": "basis" }
+}

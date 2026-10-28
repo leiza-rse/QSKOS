@@ -1,0 +1,10 @@
+title: QSKOS RDF export
+description: Ontology documentation of the QSKOS RDF export (DCAT 3, GeoSPARQL, Web Annotation, CIDOC CRM crosswalk)
+markdown: kramdown
+kramdown:
+  input: GFM
+defaults:
+  - scope: { path: "" }
+    values: { layout: default }
+exclude:
+  - "*.mmd"

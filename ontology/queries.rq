@@ -1,0 +1,58 @@
+# ===== Q1: SPARQLing Unicorn SELECT - one QGIS layer, one column per annotation field ===========
+# Unicorn contract: ?item = feature IRI, ?geo = geometry literal; every further variable becomes a column.
+# Replace <LAYER> and the field IRIs; repeat the OPTIONAL block per field.
+PREFIX qskos: <http://archaeology.link/ontology/qskos#>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+PREFIX oa: <http://www.w3.org/ns/oa#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX exv: <https://example.org/vocab/>
+SELECT ?item ?geo
+       (GROUP_CONCAT(DISTINCT COALESCE(?matLabel, ""); separator=" | ") AS ?material)
+       (GROUP_CONCAT(DISTINCT COALESCE(STR(?mat), ""); separator=" | ") AS ?material_uri)
+WHERE {
+  <LAYER> rdfs:member ?item .                       # drop this line = all features
+  ?item geo:hasGeometry/geo:asWKT ?geo .
+  OPTIONAL {
+    ?ann a qskos:Annotation ; oa:hasTarget ?item ; qskos:attribute exv:Material ; oa:hasBody ?mat .
+    OPTIONAL { ?mat skos:prefLabel ?matLabel FILTER(lang(?matLabel) = "en") }
+  }
+}
+GROUP BY ?item ?geo
+
+# ===== Q2: features annotated with ANY descendant of a concept (vocabulary must be in the store) ==
+SELECT DISTINCT ?item ?geo WHERE {
+  ?ann a qskos:Annotation ; oa:hasTarget ?item ; oa:hasBody ?v .
+  ?v skos:broader* exv:AnimalMaterial .
+  ?item geo:hasGeometry/geo:asWKT ?geo .
+}
+
+# ===== Q3: CRM shortcuts, QSKOS annotations only (CONSTRUCT / update) ===========================
+CONSTRUCT { ?ann crm:P140_assigned_attribute_to ?f ; crm:P141_assigned ?v . }
+WHERE     { ?ann a qskos:Annotation ; oa:hasTarget ?f ; oa:hasBody ?v . }
+
+# ===== Q4: flat, table-like projection (field concept as predicate) =============================
+CONSTRUCT { ?f ?field ?v }
+WHERE     { ?ann a qskos:Annotation ; oa:hasTarget ?f ; qskos:attribute ?field ; oa:hasBody ?v . }
+
+# ===== Q5: provenance WADM -> CIDOC CRM (P14 carried out by, P4 has time-span) ==================
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
+CONSTRUCT {
+  ?ann crm:P14_carried_out_by ?who ;
+       crm:P4_has_time-span [ a crm:E52_Time-Span ; crm:P82_at_some_time_within ?when ] .
+}
+WHERE { ?ann a qskos:Annotation ; dct:creator ?who ; dct:created ?when . }
+
+# ===== Q6: DCAT view - which layers/features belong to which dataset? ============================
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+SELECT ?dataset ?title ?layer (COUNT(?item) AS ?features) WHERE {
+  ?dataset a qskos:Dataset ; dct:title ?title ; dct:hasPart ?layer .
+  ?layer rdfs:member ?item .
+} GROUP BY ?dataset ?title ?layer
+
+# ===== Q7: consistency - geometry without CRS prefix in the WKT (Unicorn reads the CRS from the prefix) ==
+SELECT ?geom ?wkt WHERE {
+  ?f a qskos:Feature ; geo:hasGeometry ?geom . ?geom geo:asWKT ?wkt .
+  FILTER(!STRSTARTS(STR(?wkt), "<http"))
+}

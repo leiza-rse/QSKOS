@@ -1,8 +1,9 @@
 # lod_export.py
 # qskos QGIS Plugin - LOD Export Tab Logic
-# Exports annotated tabular data as Linked Open Data (Turtle) using URIs
-# for attribute descriptions (annotation fields → oa:motivatedBy) and
-# attribute values (selected concepts → oa:hasTarget).
+# Exports annotated features as Linked Open Data (Turtle): DCAT 3 metadata,
+# GeoSPARQL geometries and Web Annotations (one qskos:Annotation per feature
+# and annotation field: field concept → qskos:attribute, selected value
+# concepts → oa:hasBody).  The model is built in utils/rdf_model.py.
 #
 # One form is shown per annotated feature layer (one object per layer).
 # All layers can be exported together into a single Turtle; layers using the
@@ -15,31 +16,41 @@ import os
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QScrollArea,
-    QPushButton, QLabel, QLineEdit, QComboBox, QFileDialog, QMessageBox
+    QPushButton, QLabel, QLineEdit, QComboBox, QFileDialog, QMessageBox,
+    QCheckBox
 )
-from qgis.core import QgsProject, QgsMapLayer
+from qgis.core import QgsApplication, QgsProject, QgsMapLayer
 
 from ..utils.lod import (
     export_lod_ttl, derive_prefix,
     DEFAULT_OBJECT_NAMESPACE, DEFAULT_ANNOTATION_NAMESPACE,
 )
+from ..utils.rdf_model import ExportMeta, DEFAULT_LICENSE
 from ..utils.gpkg import (
+    get_bound_vocab_schemes,
     get_vocab_entries, read_config, ROLE_VOCAB,
     find_vocab_table_for_scheme, ensure_vocab_layer_loaded,
     layer_gpkg_path, layer_table_name, norm_path,
 )
 
-# Common CIDOC CRM classes offered in the (editable) class dropdown
+# CIDOC CRM classes offered in the (editable) class dropdown.
+# All are subclasses of crm:E18_Physical_Thing, because qskos:MappedObject is
+# (CRM 7.1 spells them with a hyphen: E22_Human-Made_Object).
 CRM_CLASSES = [
     "crm:E19_Physical_Object",
-    "crm:E22_Human_Made_Object",
-    "crm:E24_Physical_Human_Made_Thing",
-    "crm:E25_Human_Made_Feature",
+    "crm:E22_Human-Made_Object",
+    "crm:E24_Physical_Human-Made_Thing",
+    "crm:E25_Human-Made_Feature",
+    "crm:E26_Physical_Feature",
+    "crm:E20_Biological_Object",
     "crm:E21_Person",
-    "crm:E39_Actor",
-    "crm:E53_Place",
-    "crm:E70_Thing",
-    "crm:E77_Persistent_Item",
+    "crm:E18_Physical_Thing",
+]
+
+LICENSES = [
+    DEFAULT_LICENSE,
+    "https://creativecommons.org/licenses/by-sa/4.0/",
+    "https://creativecommons.org/publicdomain/zero/1.0/",
 ]
 
 
@@ -48,6 +59,10 @@ class LODExportManager:
         self.plugin            = plugin_instance
         self.tab_widget        = None
         self.namespace_input   = None
+        self.title_input       = None
+        self.license_input     = None
+        self.creator_input     = None
+        self.local_crs_check   = None
         self.forms_layout      = None
         self.export_btn        = None
         self.status_label      = None
@@ -70,6 +85,25 @@ class LODExportManager:
         self.namespace_input.setPlaceholderText("http://w3id.org/archlink/objects/")
         layout.addWidget(QLabel("Object Namespace:"))
         layout.addWidget(self.namespace_input)
+
+        # Dataset metadata (DCAT) and provenance, applies to the whole export
+        meta_box = QGroupBox("Dataset metadata (DCAT)")
+        meta_form = QFormLayout(meta_box)
+        self.title_input = QLineEdit()
+        self.title_input.setPlaceholderText("e.g. Condition mapping of O.34736")
+        meta_form.addRow("Dataset title:", self.title_input)
+        self.license_input = QComboBox()
+        self.license_input.setEditable(True)
+        self.license_input.addItems(LICENSES)
+        meta_form.addRow("Licence (IRI):", self.license_input)
+        self.creator_input = QLineEdit(self._default_creator())
+        self.creator_input.setPlaceholderText("Name or ORCID/ROR IRI")
+        meta_form.addRow("Creator:", self.creator_input)
+        self.local_crs_check = QCheckBox(
+            "Geometries are in an object-local coordinate system "
+            "(not a geographic CRS)")
+        meta_form.addRow(self.local_crs_check)
+        layout.addWidget(meta_box)
 
         # Scrollable per-layer forms
         self.forms_layout = QVBoxLayout()
@@ -193,6 +227,29 @@ class LODExportManager:
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _default_creator():
+        """QGIS user name (profile full name, else login name)."""
+        try:
+            return (QgsApplication.userFullName()
+                    or QgsApplication.userLoginName() or "")
+        except Exception:
+            return ""
+
+    def _export_meta(self):
+        """ExportMeta from the metadata box, or None (with a warning) if invalid."""
+        title = self.title_input.text().strip()
+        if not title:
+            QMessageBox.warning(None, "Input Required",
+                "Please enter a dataset title.")
+            return None
+        return ExportMeta(
+            title=title,
+            creator=self.creator_input.text().strip(),
+            license=self.license_input.currentText().strip(),
+            local_crs=self.local_crs_check.isChecked(),
+        )
+
     def _set_status(self, text):
         if self.status_label:
             self.status_label.setText(text)
@@ -247,6 +304,14 @@ class LODExportManager:
             for v in get_vocab_entries(self.plugin.active_gpkg_path)
         }
 
+    def _layer_schemes(self, layer):
+        """Vocabulary schemes bound to this layer in the GeoPackage."""
+        try:
+            return get_bound_vocab_schemes(
+                self.plugin.active_gpkg_path, layer_table_name(layer))
+        except Exception:
+            return []
+
     def _object_namespace(self):
         """Return the object namespace, or warn and return None if empty."""
         ns = self.namespace_input.text().strip() if self.namespace_input else ""
@@ -267,6 +332,7 @@ class LODExportManager:
             "object_id":         object_id,
             "object_label":      form["label_widget"].text().strip(),
             "object_type":       form["class_widget"].currentText().strip(),
+            "vocab_schemes":     self._layer_schemes(form["layer"]),
         }
 
     # ── UI callbacks ───────────────────────────────────────────────────────────
@@ -281,6 +347,9 @@ class LODExportManager:
             return
         object_namespace = self._object_namespace()
         if not object_namespace:
+            return
+        meta = self._export_meta()
+        if meta is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             None, f"Save LOD for {layer.name()}", "",
@@ -297,10 +366,11 @@ class LODExportManager:
             "object_id":         object_id,
             "object_label":      label_input.text().strip(),
             "object_type":       class_combo.currentText().strip(),
+            "vocab_schemes":     self._layer_schemes(layer),
         }
         try:
             n = export_lod_ttl(
-                path, [spec], object_namespace, self._vocab_prefixes()
+                path, [spec], object_namespace, self._vocab_prefixes(), meta
             )
         except Exception as e:
             self._set_status("❌ Export failed.")
@@ -337,6 +407,9 @@ class LODExportManager:
         object_namespace = self._object_namespace()
         if not object_namespace:
             return
+        meta = self._export_meta()
+        if meta is None:
+            return
 
         path, _ = QFileDialog.getSaveFileName(
             None, "Save All Layers as LOD", "",
@@ -349,7 +422,7 @@ class LODExportManager:
 
         try:
             n = export_lod_ttl(
-                path, specs, object_namespace, self._vocab_prefixes()
+                path, specs, object_namespace, self._vocab_prefixes(), meta
             )
         except Exception as e:
             self._set_status("❌ Export failed.")

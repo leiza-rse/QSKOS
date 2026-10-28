@@ -1,0 +1,35 @@
+flowchart TB
+    CAT(["qskos:Catalog"])
+    DS(["qskos:Dataset"])
+    DIST(["qskos:Distribution"])
+    LAYER(["qskos:FeatureLayer"])
+    FEAT(["qskos:Feature"])
+    GEOM(["qskos:Geometry"])
+    CRS(["qskos:LocalCoordinateSystem"])
+    ANN(["qskos:Annotation"])
+    OBJ(["qskos:MappedObject"])
+    FC(["Field concept<br/>(skos:Concept)"])
+    VC(["Value concept<br/>(skos:Concept)"])
+
+    CAT -->|dcat:dataset| DS
+    DS -->|dcat:distribution| DIST
+    DS -->|dct:hasPart| LAYER
+    DS -->|dct:subject| OBJ
+    LAYER -->|rdfs:member| FEAT
+    FEAT -->|oa:hasSource| OBJ
+    FEAT -->|geo:hasGeometry| GEOM
+    GEOM -->|qskos:inCoordinateSystem| CRS
+    ANN -->|oa:hasTarget| FEAT
+    ANN -->|qskos:attribute| FC
+    ANN -->|oa:hasBody| VC
+
+    classDef meta fill:#fbbf24,stroke:#000000,color:#000000
+    classDef cls fill:#9a3412,stroke:#000000,color:#ffffff
+    classDef real fill:#166534,stroke:#000000,color:#ffffff
+    classDef term fill:#4c1d95,stroke:#000000,color:#ffffff
+    classDef ext fill:#e2e8f0,stroke:#000000,color:#000000
+
+    class CAT,DS,DIST meta
+    class LAYER,FEAT,GEOM,CRS,ANN cls
+    class OBJ real
+    class FC,VC term
