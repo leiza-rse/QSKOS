@@ -2,6 +2,20 @@
 
 All notable changes to QSKOS are recorded here. Each entry says **what** changed, **where**, and **why**; the German *Warum* lines are the short rationale for the team.
 
+## [Unreleased] – Fix-forward refactor and agent workflow (branch `refactor/fix-forward`)
+
+### Fixed (each with a regression test in `tests/test_qgis_regressions.py`)
+- **Vocabularies overwrote each other** (`utils/gpkg.py`): table names came from the scheme URI's last segment, so `…/a/scheme` and `…/b/scheme` shared one table; the second import replaced the first and its tree and annotation widget options disappeared. Tables are now `qskos_vocab_<slug>_<hash>` (ADR-0002).
+- **Layer tab reset itself** (`tabs/layer.py`) when the layer combo re-emitted the same layer; the displayed vocabulary is now private tab state.
+- **Symbology could not read new annotations** (`utils/annotation.py`): text fields made the ValueRelation widget write `{"a","b"}`. Annotation fields are GPKG JSON fields again, with the provider's exact native type — otherwise `commitChanges()` rejects the field, which went unnoticed before (ADR-0001).
+- **Ticking a concept committed the user's pending edits**; in edit mode the field now joins the user's edit session.
+- **Imported vocabularies were missing from the Layer tab** until the layer was re-selected.
+- Field value domain is the concept plus its descendants, so leaf concepts work (ADR-0003).
+
+### Changed
+- Merged `rdf-export-dev` into the `qskos/` package layout (`utils/rdf_model.py`, adapted `lod.py`/`lod_export.py`); the LOD Export tab is now covered by the QGIS end-to-end tests.
+- Agent workflow: `AGENTS.md`, `context/` with `STATUS.md`, `roadmap.md`, `work-packages/`, `adr/`, `open-questions.md`, `review-checklist.md`; `Makefile` (`test`, `test-qgis`, `docs`, `next`). The earlier `context/assessment.md` and `refactoring.md` are replaced (they marked items resolved that were not); background specs moved to `context/reference/`.
+
 ## [Unreleased] – New RDF export model (branch `rdf-export-v4`)
 
 ### Summary

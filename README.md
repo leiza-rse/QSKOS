@@ -155,10 +155,12 @@ The QSKOS plugin bridges the gap between geographic data and semantic web techno
 
 ## Development
 
-The plugin package lives in `qskos/`.
+The plugin package lives in `qskos/`. Contributors (people and coding agents) start with `AGENTS.md`;
+planning, decisions and status live in `context/` (`STATUS.md`, `roadmap.md`, `work-packages/`, `adr/`).
 
-    uv run pytest                    # pure unit tests + export tests, no QGIS needed
-    scripts/run_qgis_tests.sh        # QGIS-bound and end-to-end tests (headless, real QGIS)
-    python tools/main.py             # rebuild ontology example, diagrams and docs/
+    make test        # pure unit tests + export tests, no QGIS needed
+    make test-qgis   # QGIS-bound and end-to-end tests (headless, real QGIS)
+    make docs        # rebuild ontology example, diagrams and docs/
+    make next        # which work packages can be started
 
 `scripts/install_qgis_ubuntu.sh` sets up QGIS and the test venv on Ubuntu/WSL.

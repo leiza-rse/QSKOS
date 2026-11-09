@@ -1,0 +1,23 @@
+# Open questions
+
+Status: `open` = needs a human decision; `spike` = answered by a work package; `verify` = check, then close; `decided` = closed.
+Each open question carries a recommendation. Questions about the export model go to its author.
+
+| ID | Question | Status | Needed for |
+|---|---|---|---|
+| Q1 | Value domain of an annotation field. Decided (2026-11-09): the concept itself plus all its descendants (ADR-0003). | decided | – |
+| Q2 | Storage of annotation values. Decided (2026-11-09): GPKG JSON fields with the provider's native type; text fields only read (ADR-0001). | decided | – |
+| Q3 | Vocabulary table names. Decided (2026-11-09): `qskos_vocab_<slug>_<hash>`, resolved via the config table (ADR-0002). | decided | – |
+| Q4 | **Export IRIs collide.** `rdf_model.py` builds annotation IRIs from the last segment of the field IRI, object IRIs from the last segment of the object ID, feature/layer IRIs from the layer *display name*. Two fields `…/a/color` and `…/b/color` on one layer merge into one annotation; same for objects `http://a/x/1` vs `http://b/y/1` and two layers with the same name. Recommendation: keep the readable slug and append a short hash of the full IRI (as in ADR-0002); use the GPKG table name, not the display name, for layers. Changes existing export IRIs — acceptable before the first public export? | open (export author) | WP-010 |
+| Q5 | **`qskos:usesVocabulary` fallback.** A layer without bound schemes (or when reading the bindings fails, which `_layer_schemes` swallows) is exported as using *every* vocabulary in the GPKG. Recommendation: derive the schemes from the vocabularies the layer's annotation fields belong to; never fall back to all; log read errors. | open (export author) | WP-011 |
+| Q6 | **Import languages.** The Vocabulary tab offers only `en`/`de`. Recommendation: list the language tags found in the selected source after parsing (with `en` fallback as today). | open | WP-007 |
+| Q7 | **Legacy text annotation fields** (created by the 2026-10 refactor builds) stay readable (ADR-0001). Migrate them to JSON? Options: never (keep lenient reading), an explicit "Upgrade annotation fields" action per layer, automatic on layer selection. Recommendation: explicit action (it changes the schema of a user table). | open | WP-022 |
+| Q8 | **Workflow.** AGENTS.md proposes a branch + pull request per package/batch (two people push), unlike conserFAIRy's trunk-based flow. Confirm? | open | – |
+| Q9 | **`ExportMeta` is mutated** by `build_lod_graph`/`export_lod_ttl` (`issued`, `created`, `object_namespace`, `file_name`; timestamps only set when empty, so a reused instance keeps the first export's dates). Recommendation: work on a copy (`dataclasses.replace`). | verify (export author) | WP-011 |
+| Q10 | **Double serialisation.** `serialize_deterministic` writes N-Triples, sorts, re-parses and writes Turtle again. Is byte-identical output needed beyond what rdflib's Turtle serializer gives (it sorts subjects/predicates/objects)? Recommendation: measure on a large layer; keep the sort only if `tools/` byte-stability checks need it. | open (export author) | WP-011 |
+| Q11 | **Ontology namespace** `http://archaeology.link/ontology/qskos#` is a placeholder; CRMgeo parents should be re-checked against CRMbase 7.1.x (from the export CHANGELOG). | open (export author) | before first public export |
+| Q12 | **Vocabulary CSV dialect.** QSKOS reads `label@lang|label@lang` cells with `broader` = URI; conserFAIRy (ADR-0007 there) uses `prefLabel@de` headers, `|` for multiple values, `broader` = notation, for the same conservation thesaurus. Support conserFAIRy's dialect too? Recommendation: yes, auto-detected from the header. | open | WP-020 |
+| Q13 | **Rule nesting in symbology.** Group rules carry a symbol and their child rules too, so annotated features are drawn twice (group colour under concept colour). Should group rules be symbol-less (legend headings only)? Recommendation: symbol-less groups. | open | WP-003 |
+| Q14 | **Remote URL import.** Keep it (network access from the plugin)? Timeout? Recommendation: keep, 30 s timeout, run as a cancellable `QgsTask`. | open | WP-006 |
+| Q15 | **QGIS 4 / Qt6.** `metadata.txt` says QGIS ≥ 3.44; the code imports `PyQt5` directly, which breaks under QGIS 4. Target QGIS 4 too? Recommendation: yes — switch to `qgis.PyQt` (cheap) and add a QGIS 4 CI job once available on Ubuntu. | open | WP-007 |
+| Q16 | **UI language.** UI strings are English only. Is German UI needed (users, paper)? Recommendation: not before the structure packages are done. | open | – |
