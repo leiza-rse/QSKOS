@@ -1,27 +1,31 @@
 # layer.py
 # qskos QGIS Plugin - Layer Tab Logic
-# Multi-vocabulary binding, concept hierarchy tree, annotation field creation.
+# Binds vocabularies to a feature layer, shows the concept tree of the selected
+# vocabulary and turns ticked concepts into annotation fields.
+#
+# State owned by this tab:
+#   plugin.state.current_feature_layer  the layer chosen in the combo (shared:
+#                                       the Symbology tab acts on it too)
+#   self._shown_scheme / _shown_vocab   the vocabulary whose tree is displayed,
+#                                       set ONLY by selecting it in the list
+# Every handler derives what it needs from these two; nothing else is cached.
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QTreeWidget, QTreeWidgetItem, QLabel,
-    QListWidget, QListWidgetItem, QMessageBox, QInputDialog
+    QWidget, QVBoxLayout, QFormLayout, QPushButton, QTreeWidget,
+    QTreeWidgetItem, QLabel, QListWidget, QListWidgetItem, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
-from qgis.core import (
-    QgsProject, QgsMapLayer, QgsMapLayerProxyModel
-)
+from qgis.core import QgsProject, QgsMapLayer, QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
 from ..utils.annotation import (
-    create_annotation_field as annotation_field_create,
+    create_annotation_field,
     reinitialize_annotation_fields_for_vocab,
 )
 from ..utils.gpkg import (
     read_config, get_vocab_entries, get_bound_vocab_schemes,
     find_vocab_table_for_scheme, bind_feature_to_vocab,
-    unbind_feature_from_vocab, norm_path,
-    ROLE_VOCAB,
+    unbind_feature_from_vocab, norm_path, ROLE_VOCAB,
 )
 from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name,
@@ -29,51 +33,83 @@ from ..utils.layers import (
 from ..utils.logging import log, LEVEL_WARNING
 
 
-
-def build_concept_tree_from_layer(vocab_layer):
+def build_concept_tree_items(vocab_layer):
     """
-    Build QTreeWidgetItems from a vocab OGR layer (loaded from GPKG).
-    Returns root items (concepts with no broader).
-
-    Two-pass approach:
-      Pass 1 — create one QTreeWidgetItem per concept.
-      Pass 2 — attach children to parents; collect roots.
-
-    Qt widget adapter — kept in the tabs layer (not utils/hierarchy.py, which
-    is QGIS-free for unit testing).
+    Build checkable QTreeWidgetItems for a vocab layer and return the roots
+    (concepts without a broader concept inside the vocabulary).
     """
-    concepts   = {}
-    root_items = []
-
+    items, parents = {}, {}
     for feat in vocab_layer.getFeatures():
-        uri   = feat["concept"]
-        label = feat["prefLabel"]
-        item  = QTreeWidgetItem([label])
+        uri = feat["concept"]
+        item = QTreeWidgetItem([feat["prefLabel"] or uri])
         item.setData(0, Qt.UserRole, uri)
+        item.setToolTip(0, uri)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(0, Qt.Unchecked)
-        concepts[uri] = item
+        items[uri] = item
+        parents[uri] = feat["broader"] or None
 
-    for feat in vocab_layer.getFeatures():
-        uri     = feat["concept"]
-        broader = feat["broader"] or None
-        item    = concepts.get(uri)
-        if item is None:
-            continue
-        if broader and broader in concepts:
-            concepts[broader].addChild(item)
+    roots = []
+    for uri, item in items.items():
+        parent = parents[uri]
+        if parent in items and parent != uri:
+            items[parent].addChild(item)
         else:
-            root_items.append(item)
+            roots.append(item)
+    return roots
 
-    return root_items
+
+def _iter_tree(parent):
+    for i in range(parent.childCount()):
+        child = parent.child(i)
+        yield child
+        yield from _iter_tree(child)
+
+
+def _confirm_unbind(scheme_uri):
+    reply = QMessageBox.question(
+        None, "Confirm Unbind",
+        f"Remove binding to:\n'{scheme_uri}'?\n\n"
+        f"Annotation columns on the feature layer will NOT be deleted.\n"
+        f"Remove them manually via the layer attribute table if needed.",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.No,
+    )
+    return reply == QMessageBox.Yes
 
 
 class LayerManager:
     def __init__(self, plugin_instance):
-        self.plugin           = plugin_instance
+        self.plugin = plugin_instance
         self.feature_layer_combo = None
-        self.vocab_list          = None
-        self.tree_view           = None
+        self.vocab_list = None
+        self.tree_view = None
+        self.hint_label = None
+        self._shown_scheme = None
+        self._shown_vocab = None
+
+    # ── Convenience ────────────────────────────────────────────────────────────
+
+    @property
+    def _gpkg(self):
+        return self.plugin.state.active_gpkg_path
+
+    @property
+    def _layer(self):
+        return self.plugin.state.current_feature_layer
+
+    def _feature_table(self):
+        return layer_table_name(self._layer) if self._layer else ""
+
+    def _bound_schemes(self):
+        table = self._feature_table()
+        if not (self._gpkg and table):
+            return set()
+        return set(get_bound_vocab_schemes(self._gpkg, table))
+
+    def _hint(self, text):
+        if self.hint_label:
+            self.hint_label.setText(text)
 
     # ── Tab setup ──────────────────────────────────────────────────────────────
 
@@ -81,7 +117,6 @@ class LayerManager:
         """Build and return the Layer tab widget."""
         layout = QVBoxLayout()
 
-        # Feature layer selector
         form = QFormLayout()
         self.feature_layer_combo = QgsMapLayerComboBox()
         self.feature_layer_combo.setFilters(
@@ -89,434 +124,304 @@ class LayerManager:
         )
         self.feature_layer_combo.setAllowEmptyLayer(True)
         self.feature_layer_combo.setShowCrs(True)
-        self.feature_layer_combo.layerChanged.connect(
-            self.plugin.on_feature_layer_changed
-        )
+        self.feature_layer_combo.layerChanged.connect(self.on_feature_layer_changed)
         form.addRow("Feature Layer:", self.feature_layer_combo)
         layout.addLayout(form)
 
-        # Vocabulary management list (shows all vocabularies with binding state)
-        layout.addWidget(QLabel("<b>Vocabulary Management</b>"))
+        layout.addWidget(QLabel("<b>Vocabularies</b> (tick to bind to the layer)"))
         self.vocab_list = QListWidget()
         self.vocab_list.setMaximumHeight(150)
-        self.vocab_list.currentItemChanged.connect(
-            self._on_vocab_selection_changed
-        )
-        self.vocab_list.itemChanged.connect(
-            self._on_vocab_binding_toggled
-        )
+        self.vocab_list.currentItemChanged.connect(self._on_vocab_selected)
+        self.vocab_list.itemChanged.connect(self._on_vocab_check_toggled)
         layout.addWidget(self.vocab_list)
 
-        # Unbind button (kept as fallback)
         unbind_btn = QPushButton("Unbind Selected")
-        unbind_btn.clicked.connect(self._on_unbind_vocab_clicked)
+        unbind_btn.clicked.connect(self._on_unbind_clicked)
         layout.addWidget(unbind_btn)
 
-        # Concept hierarchy tree
         self.tree_view = QTreeWidget()
         self.tree_view.setHeaderLabel("Concept Hierarchy")
-        self.tree_view.itemChanged.connect(self.plugin.on_tree_item_changed)
+        self.tree_view.itemChanged.connect(self._on_tree_item_changed)
         layout.addWidget(self.tree_view)
+
+        self.hint_label = QLabel("")
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
 
         tab = QWidget()
         tab.setLayout(layout)
         return tab
 
-    # ── Vocabulary management interactions ─────────────────────────────────────
+    # ── Feature layer ──────────────────────────────────────────────────────────
 
-    def _on_vocab_selection_changed(self, current, previous):
-        """Load the concept hierarchy tree only for bound vocabularies."""
-        if not current:
-            self._clear_tree()
-            self.plugin.state.current_vocab_layer  = None
-            self.plugin.state.current_vocab_scheme = None
+    def on_feature_layer_changed(self, layer):
+        """Combo selection changed: re-point widgets and rebuild the list."""
+        if layer is self._layer and layer is not None:
+            # QgsMapLayerComboBox re-emits the same layer when its filter is
+            # refreshed (e.g. after a vocab layer is added to the project).
+            # Rebuilding here used to reset the list and hide the tree.
             return
+        self.plugin.state.current_feature_layer = layer
+        self._shown_scheme = None
+        if layer is not None:
+            self.reinitialize_all_annotation_fields_for_layer(layer)
+        self.refresh_vocab_list()
 
-        self._load_tree_for_item(current)
+    # ── Vocabulary list ────────────────────────────────────────────────────────
 
-    def _load_tree_for_item(self, item):
-        """Load the concept hierarchy tree for a vocabulary item if it's bound."""
-        if not item:
-            self._clear_tree()
-            self.plugin.state.current_vocab_layer  = None
-            self.plugin.state.current_vocab_scheme = None
+    def refresh_vocab_list(self):
+        """
+        Rebuild the vocabulary list for the current feature layer from the GPKG
+        config (call after imports / GPKG changes).  Keeps the displayed
+        vocabulary selected if it still exists, else selects the first one.
+        """
+        if self.vocab_list is None:
             return
-
-        scheme_uri = item.data(Qt.UserRole)
-
-        # Check if this vocabulary is bound to the current feature layer
-        feature_layer = self.feature_layer_combo.currentLayer()
-        if not feature_layer:
-            self._clear_tree()
-            return
-
-        feature_table = layer_table_name(feature_layer)
-        if not feature_table:
-            self._clear_tree()
-            return
-
-        # Get currently bound vocabularies for this feature layer
-        bound_schemes = set(
-            get_bound_vocab_schemes(self.plugin.state.active_gpkg_path, feature_table)
-        )
-
-        # Only load tree if the vocabulary is bound
-        if scheme_uri not in bound_schemes:
-            self._clear_tree()
-            return
-
-        table_name = find_vocab_table_for_scheme(
-            self.plugin.state.active_gpkg_path, scheme_uri
-        )
-        if not table_name:
-            self._clear_tree()
-            return
+        keep = self._shown_scheme
+        self.vocab_list.blockSignals(True)
         try:
-            vocab_layer = ensure_vocab_layer_loaded(
-                self.plugin.state.active_gpkg_path, table_name
+            self.vocab_list.clear()
+            if self._gpkg and self._feature_table():
+                bound = self._bound_schemes()
+                for vocab in get_vocab_entries(self._gpkg):
+                    scheme = vocab["scheme_uri"]
+                    item = QListWidgetItem(f"{vocab['layer_name']}  —  {scheme}")
+                    item.setData(Qt.UserRole, scheme)
+                    item.setToolTip(scheme)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Checked if scheme in bound else Qt.Unchecked)
+                    self.vocab_list.addItem(item)
+            row = next(
+                (i for i in range(self.vocab_list.count())
+                 if self.vocab_list.item(i).data(Qt.UserRole) == keep),
+                0,
             )
-            self.plugin.state.current_vocab_scheme = scheme_uri
-            self.plugin.state.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
-            self.load_concept_tree(self.plugin.state.current_feature_layer, vocab_layer)
-        except Exception as e:
-            log(f"Failed to load concept tree for {scheme_uri}: {e}",
-                LEVEL_WARNING)
-            self._clear_tree()
+            if self.vocab_list.count():
+                self.vocab_list.setCurrentRow(row)
+        finally:
+            self.vocab_list.blockSignals(False)
 
-    def _on_vocab_binding_toggled(self, item):
-        """
-        Handle checkbox state changes to bind/unbind vocabularies.
-        Checkbox only changes binding state - use unbind button for confirmation.
-        """
-        if not item or not self.plugin.state.active_gpkg_path:
-            return
+        current = self.vocab_list.currentItem()
+        self.show_vocab(current.data(Qt.UserRole) if current else None)
 
-        scheme_uri = item.data(Qt.UserRole)
-        feature_layer = self.feature_layer_combo.currentLayer()
-        if not feature_layer:
-            item.setCheckState(Qt.Unchecked)
+    def _on_vocab_selected(self, current, _previous):
+        self.show_vocab(current.data(Qt.UserRole) if current else None)
+
+    def _set_item_checked(self, item, checked):
+        self.vocab_list.blockSignals(True)
+        item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+        self.vocab_list.blockSignals(False)
+
+    def _on_vocab_check_toggled(self, item):
+        """Checkbox in the vocabulary list: bind or (after confirming) unbind."""
+        scheme = item.data(Qt.UserRole)
+        checked = item.checkState() == Qt.Checked
+        table = self._feature_table()
+        if not (self._gpkg and table):
+            self._set_item_checked(item, not checked)
             QMessageBox.warning(None, "No Feature Layer",
-                "Select a feature layer first to bind/unbind vocabularies.")
+                "Select a GeoPackage feature layer first.")
             return
-
-        feature_table = layer_table_name(feature_layer)
-        if not feature_table:
-            item.setCheckState(Qt.Unchecked)
-            QMessageBox.warning(None, "Invalid Layer",
-                "The selected layer does not appear to be a GeoPackage table.")
-            return
-
-        # Check if the item is being checked (bind) or unchecked (unbind)
-        is_checked = item.checkState() == Qt.Checked
 
         try:
-            if is_checked:
-                # Bind the vocabulary
-                bind_feature_to_vocab(
-                    self.plugin.state.active_gpkg_path, feature_table, scheme_uri
-                )
-                # If this is the currently selected item, load the tree automatically
-                if self.vocab_list.currentItem() == item:
-                    self._load_tree_for_item(item)
+            if checked:
+                bind_feature_to_vocab(self._gpkg, table, scheme)
+            elif _confirm_unbind(scheme):
+                unbind_feature_from_vocab(self._gpkg, table, scheme)
             else:
-                # Unbind the vocabulary - but revert checkbox and show confirmation
-                reply = QMessageBox.question(
-                    None, "Confirm Unbind",
-                    f"Remove binding to:\n'{scheme_uri}'?\n\n"
-                    f"Annotation columns on the feature layer will NOT be deleted.\n"
-                    f"Remove them manually via the layer attribute table if needed.",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
-                )
-                if reply == QMessageBox.Yes:
-                    unbind_feature_from_vocab(
-                        self.plugin.state.active_gpkg_path, feature_table, scheme_uri
-                    )
-                    # Clear the tree if we just unbound the currently displayed vocab
-                    if self.plugin.state.current_vocab_scheme == scheme_uri:
-                        self._clear_tree()
-                        self.plugin.state.current_vocab_layer  = None
-                        self.plugin.state.current_vocab_scheme = None
-                else:
-                    # Revert the checkbox state if user cancelled
-                    item.setCheckState(Qt.Checked)
-
+                self._set_item_checked(item, True)
+                return
         except Exception as e:
-            # Revert the checkbox state if there was an error
-            item.setCheckState(Qt.Unchecked if is_checked else Qt.Checked)
+            self._set_item_checked(item, not checked)
             QMessageBox.critical(None, "Operation Failed",
-                f"Could not {'bind' if is_checked else 'unbind'} vocabulary:\n{str(e)}")
-
-    def _on_unbind_vocab_clicked(self):
-        """
-        Remove the selected vocab binding from the config table.
-        This is kept as a fallback method but less necessary with the new checkbox approach.
-        """
-        if not self.vocab_list:
+                f"Could not {'bind' if checked else 'unbind'} vocabulary:\n{e}")
             return
-        current = self.vocab_list.currentItem()
-        if not current:
+
+        if self.vocab_list.currentItem() is not item:
+            self.vocab_list.setCurrentItem(item)   # -> _on_vocab_selected
+        else:
+            self.show_vocab(scheme)
+
+    def _on_unbind_clicked(self):
+        item = self.vocab_list.currentItem() if self.vocab_list else None
+        if item is None:
             QMessageBox.information(None, "Nothing Selected",
                 "Select a vocabulary in the list to unbind.")
             return
-
-        scheme_uri    = current.data(Qt.UserRole)
-        feature_layer = self.feature_layer_combo.currentLayer()
-        feature_table = layer_table_name(feature_layer) if feature_layer else None
-        if not feature_table:
+        if item.checkState() != Qt.Checked:
             return
+        # Same path as unticking the checkbox.
+        item.setCheckState(Qt.Unchecked)
 
-        reply = QMessageBox.question(
-            None, "Confirm Unbind",
-            f"Remove binding to:\n'{scheme_uri}'?\n\n"
-            f"Annotation columns on the feature layer will NOT be deleted.\n"
-            f"Remove them manually via the layer attribute table if needed.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
-
-        try:
-            unbind_feature_from_vocab(
-                self.plugin.state.active_gpkg_path, feature_table, scheme_uri
-            )
-            # Update the checkbox state
-            current.setCheckState(Qt.Unchecked)
-
-            # Clear the tree if we just unbound the currently displayed vocab
-            if self.plugin.state.current_vocab_scheme == scheme_uri:
-                self._clear_tree()
-                self.plugin.state.current_vocab_layer  = None
-                self.plugin.state.current_vocab_scheme = None
-
-        except Exception as e:
-            QMessageBox.critical(None, "Unbind Failed",
-                f"Could not unbind vocabulary:\n{str(e)}")
-
-    # ── Feature layer change ───────────────────────────────────────────────────
-
-    def on_feature_layer_changed(self, layer):
-        """Called when the feature layer combo selection changes."""
-        if self.vocab_list:
-            self.vocab_list.clear()
-        self._clear_tree()
-
-        self.plugin.state.current_feature_layer = layer
-        self.plugin.state.current_vocab_layer   = None
-        self.plugin.state.current_vocab_scheme  = None
-
-        if not layer or not self.plugin.state.active_gpkg_path:
-            return
-
-        feature_table = layer_table_name(layer)
-        if not feature_table:
-            return
-
-        # Reinitialize ValueRelation widgets for existing annotation fields
-        # This ensures that when loading existing layers, their widgets are properly configured
-        self.reinitialize_all_annotation_fields_for_layer(layer)
-
-        # Populate unified vocabulary list with all available vocabularies
-        self._refresh_vocabulary_list(feature_table)
-
-    def _refresh_vocabulary_list(self, feature_table):
-        """
-        Populate the vocabulary list with all available vocabularies,
-        showing their binding state with checkboxes.
-        """
-        if not self.plugin.state.active_gpkg_path:
-            return
-
-        # Get all vocabularies in the GeoPackage
-        all_vocabs = get_vocab_entries(self.plugin.state.active_gpkg_path)
-        if not all_vocabs:
-            return
-
-        # Get currently bound vocabularies for this feature layer
-        bound_schemes = set(
-            get_bound_vocab_schemes(self.plugin.state.active_gpkg_path, feature_table)
-        )
-
-        # Add all vocabularies to the list with appropriate checkbox state
-        for vocab in all_vocabs:
-            scheme_uri = vocab["scheme_uri"]
-            table_name = vocab["layer_name"]
-
-            item = QListWidgetItem(f"{table_name}  —  {scheme_uri}")
-            item.setData(Qt.UserRole, scheme_uri)
-
-            # Set checkbox state based on whether this vocabulary is bound
-            if scheme_uri in bound_schemes:
-                item.setCheckState(Qt.Checked)
-            else:
-                item.setCheckState(Qt.Unchecked)
-
-            # Make items checkable
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-
-            self.vocab_list.addItem(item)
-
-        # Auto-select the first vocabulary so the tree is immediately populated
-        if self.vocab_list and self.vocab_list.count() > 0:
-            self.vocab_list.setCurrentRow(0)
-
-
-    # ── Tree management ────────────────────────────────────────────────────────
+    # ── Concept tree ───────────────────────────────────────────────────────────
 
     def _clear_tree(self):
-        """Clear the tree with signals blocked to avoid spurious field creation."""
         if self.tree_view:
             self.tree_view.blockSignals(True)
             self.tree_view.clear()
             self.tree_view.blockSignals(False)
 
-    def load_concept_tree(self, feature_layer, vocab_layer):
+    def show_vocab(self, scheme_uri):
         """
-        Populate the tree with the concept hierarchy for vocab_layer.
+        Display the concept tree of scheme_uri for the current feature layer.
+        The tree is only shown for vocabularies bound to the layer; concepts
+        that already have an annotation field are shown ticked.
+        """
+        self._shown_scheme = scheme_uri
+        self._shown_vocab = None
+        self._clear_tree()
 
-        Signal blocking wraps the entire build+restore cycle so that
-        setCheckState() calls in restore_checked_concepts() do NOT fire
-        on_tree_item_changed() — which would create annotation fields for
-        every already-existing field on every tree load.
-        """
-        if not self.tree_view:
+        layer = self._layer
+        if layer is None:
+            self._hint("Select a feature layer.")
+            return
+        if not scheme_uri:
+            self._hint("Import a vocabulary in the Vocabulary tab.")
+            return
+        if scheme_uri not in self._bound_schemes():
+            self._hint("Tick the vocabulary to bind it to this layer.")
             return
 
+        table = find_vocab_table_for_scheme(self._gpkg, scheme_uri)
+        try:
+            if not table:
+                raise LookupError(f"no table registered for {scheme_uri}")
+            vocab_layer = ensure_vocab_layer_loaded(self._gpkg, table)
+        except Exception as e:
+            log(f"Cannot load vocabulary {scheme_uri}: {e}", LEVEL_WARNING)
+            self._hint(f"❌ Cannot load vocabulary: {e}")
+            return
+
+        self._shown_vocab = vocab_layer
+        existing = {f.name() for f in layer.fields()}
         self.tree_view.blockSignals(True)
-        self.tree_view.clear()
+        try:
+            for root in build_concept_tree_items(vocab_layer):
+                self.tree_view.addTopLevelItem(root)
+            for item in _iter_tree(self.tree_view.invisibleRootItem()):
+                if item.data(0, Qt.UserRole) in existing:
+                    item.setCheckState(0, Qt.Checked)
+        finally:
+            self.tree_view.blockSignals(False)
+        self._hint(f"Tick a concept to add it as an annotation field to "
+                   f"'{layer.name()}'.")
 
-        self.plugin.state.current_feature_layer = feature_layer
-        self.plugin.state.current_vocab_layer   = vocab_layer
-        self.plugin.state.get_hierarchy_for_layer(vocab_layer)  # pre-warm cache
-
-        for item in build_concept_tree_from_layer(vocab_layer):
-            self.tree_view.addTopLevelItem(item)
-
-        if feature_layer:
-            existing_fields = [f.name() for f in feature_layer.fields()]
-            self.restore_checked_concepts(
-                self.tree_view.invisibleRootItem(), existing_fields
-            )
-
-            # Reinitialize ValueRelation widgets for ALL existing annotation fields
-            # This fixes the issue where existing fields show as text inputs instead of checkboxes
-            self.reinitialize_all_annotation_fields_for_layer(feature_layer)
-
+    def _set_tree_item_checked(self, item, checked):
+        self.tree_view.blockSignals(True)
+        item.setCheckState(0, Qt.Checked if checked else Qt.Unchecked)
         self.tree_view.blockSignals(False)
 
-    def restore_checked_concepts(self, parent_item, existing_uris):
-        """Recursively check tree items whose URI matches an existing field name."""
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            if child.data(0, Qt.UserRole) in existing_uris:
-                child.setCheckState(0, Qt.Checked)
-            self.restore_checked_concepts(child, existing_uris)
+    def _on_tree_item_changed(self, item, column):
+        if column != 0:
+            return
+        layer, vocab = self._layer, self._shown_vocab
+        if layer is None or vocab is None:
+            return
+        uri = item.data(0, Qt.UserRole)
+        has_field = layer.fields().lookupField(uri) != -1
 
+        if item.checkState(0) == Qt.Checked:
+            if not has_field:
+                ok = self.create_annotation_field(uri, item.text(0))
+                if not ok:
+                    self._set_tree_item_checked(item, False)
+        elif has_field:
+            # Unticking does not delete data; keep the tree truthful.
+            self._set_tree_item_checked(item, True)
+            QMessageBox.information(None, "Field Kept",
+                f"The annotation field '{item.text(0)}' was not removed.\n"
+                f"Delete the column via the layer's attribute table if needed.")
+
+    # ── Annotation fields ──────────────────────────────────────────────────────
+
+    def create_annotation_field(self, concept_uri, label):
+        """
+        Add an annotation field for concept_uri (from the displayed vocabulary)
+        to the current feature layer.  Returns True on success.
+        """
+        layer, vocab = self._layer, self._shown_vocab
+        if layer is None or vocab is None:
+            return False
+        children_map, _ = self.plugin.state.get_hierarchy_for_layer(vocab)
+        try:
+            result = create_annotation_field(
+                layer, vocab, children_map, concept_uri, label
+            )
+        except RuntimeError as e:
+            log(str(e), LEVEL_WARNING)
+            QMessageBox.critical(None, "Field Not Created", str(e))
+            return False
+        if result == "created":
+            QMessageBox.information(None, "Field Created",
+                f"Annotation field '{label}' created.")
+        elif result == "pending":
+            QMessageBox.information(None, "Field Added",
+                f"Annotation field '{label}' was added to your current edit "
+                f"session of '{layer.name()}'. Save your edits to keep it.")
+        return True
 
     def reinitialize_all_annotation_fields_for_layer(self, feature_layer):
         """
         Re-point the ValueRelation widgets of all annotation fields on a layer,
-        across every vocabulary bound to it. Annotation fields are detected from
-        each bound vocabulary's concept URIs (not by field-type sniffing).
+        across every vocabulary bound to it (fields are recognised by their
+        concept-URI names).
         """
-        if not feature_layer or not self.plugin.state.active_gpkg_path:
+        if feature_layer is None or not self._gpkg:
             return
-
-        feature_table = layer_table_name(feature_layer)
-        if not feature_table:
+        table = layer_table_name(feature_layer)
+        if not table:
             return
-
-        bound_schemes = get_bound_vocab_schemes(
-            self.plugin.state.active_gpkg_path, feature_table
-        )
-        for scheme_uri in bound_schemes:
-            table_name = find_vocab_table_for_scheme(
-                self.plugin.state.active_gpkg_path, scheme_uri
-            )
-            if not table_name:
+        for scheme_uri in get_bound_vocab_schemes(self._gpkg, table):
+            vocab_table = find_vocab_table_for_scheme(self._gpkg, scheme_uri)
+            if not vocab_table:
                 continue
             try:
-                vocab_layer = ensure_vocab_layer_loaded(
-                    self.plugin.state.active_gpkg_path, table_name
-                )
-                children_map, concept_labels = self.plugin.state.get_hierarchy_for_layer(
+                vocab_layer = ensure_vocab_layer_loaded(self._gpkg, vocab_table)
+                children_map, labels = self.plugin.state.get_hierarchy_for_layer(
                     vocab_layer
                 )
                 reinitialize_annotation_fields_for_vocab(
-                    feature_layer, vocab_layer, children_map, concept_labels
+                    feature_layer, vocab_layer, children_map, labels
                 )
             except Exception as e:
-                # Don't let one vocabulary failure prevent others from being
-                # processed. Logged (QgsMessageLog) in a later milestone.
                 log(f"Reinitialize fields failed for {scheme_uri}: {e}",
                     LEVEL_WARNING)
-                continue
 
-    # ── Annotation field creation ──────────────────────────────────────────────
-
-    def create_annotation_field(self, concept_uri, label):
-        """
-        Add an annotation field named concept_uri to the current feature layer,
-        with a ValueRelation widget showing descendants of concept_uri.
-        Delegates to utils.annotation.create_annotation_field.
-        """
-        feature_layer = self.plugin.state.current_feature_layer
-        vocab_layer = self.plugin.state.current_vocab_layer
-        if not feature_layer or not vocab_layer:
-            return
-        children_map, _ = self.plugin.state.get_hierarchy_for_layer(vocab_layer)
-        created = annotation_field_create(
-            feature_layer, vocab_layer, children_map, concept_uri, label
-        )
-        if created:
-            QMessageBox.information(None, "Field Created",
-                f"Annotation field '{label}' created.")
+    def on_vocabularies_changed(self):
+        """A vocabulary was imported/replaced: refresh widgets, list and tree."""
+        if self._layer is not None:
+            self.reinitialize_all_annotation_fields_for_layer(self._layer)
+        self.refresh_vocab_list()
 
     # ── Layer combo refresh ────────────────────────────────────────────────────
 
     def refresh_layer_combos(self):
         """
-        Rebuild the feature layer combo exception list so it shows only
-        geometry layers from the active GPKG, excluding vocab attribute tables.
-
-        Pure logic — no visibility check — so it is safe to call directly
-        from tests without a running Qt event loop.
+        Restrict the feature layer combo to geometry layers from the active
+        GPKG, excluding vocab attribute tables.
         """
+        if not self.feature_layer_combo:
+            return
         try:
-            all_layers = list(QgsProject.instance().mapLayers().values())
-
-            vocab_table_names = set()
-            if self.plugin.state.active_gpkg_path:
-                vocab_table_names = {
-                    r["layer_name"]
-                    for r in read_config(self.plugin.state.active_gpkg_path)
+            vocab_tables = set()
+            if self._gpkg:
+                vocab_tables = {
+                    r["layer_name"] for r in read_config(self._gpkg)
                     if r["layer_role"] == ROLE_VOCAB
                 }
-
-            if not self.feature_layer_combo:
-                return
-
             excepted = []
-            for layer in all_layers:
+            for layer in QgsProject.instance().mapLayers().values():
                 if layer.type() != QgsMapLayer.VectorLayer:
                     excepted.append(layer)
-                    continue
-                # Exclude vocab attribute tables
-                if layer_table_name(layer) in vocab_table_names:
+                elif layer_table_name(layer) in vocab_tables:
                     excepted.append(layer)
-                    continue
-                # If a GPKG is active, exclude layers not from it
-                if self.plugin.state.active_gpkg_path and (
-                    norm_path(layer_gpkg_path(layer))
-                    != norm_path(self.plugin.state.active_gpkg_path)
+                elif self._gpkg and (
+                    norm_path(layer_gpkg_path(layer)) != norm_path(self._gpkg)
                 ):
                     excepted.append(layer)
-
             self.feature_layer_combo.setExceptedLayerList(excepted)
-
         except RuntimeError:
-            pass  # Widget was deleted — safe to ignore
+            pass  # widget already deleted (plugin unloading)
         except Exception as e:
             log(f"refresh_layer_combos error: {e}", LEVEL_WARNING)
 

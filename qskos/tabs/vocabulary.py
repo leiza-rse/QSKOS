@@ -156,20 +156,25 @@ class VocabularyManager:
                 self.plugin.state.selected_language,
                 self.plugin.state.active_gpkg_path,
             )
-            # The table was replaced — drop any cached hierarchy for it.
+            # The table content was replaced: drop the cached hierarchy and
+            # make an already-open QGIS layer re-read it.
             self.plugin.state.invalidate_vocab_cache(
                 self.plugin.state.active_gpkg_path, table_name
             )
-            # Load the new table into the project so ValueRelation can reference it
-            ensure_vocab_layer_loaded(self.plugin.state.active_gpkg_path, table_name)
+            vocab_layer = ensure_vocab_layer_loaded(
+                self.plugin.state.active_gpkg_path, table_name
+            )
+            vocab_layer.reload()
 
             self.vocab_status_label.setText(f"✅ Imported: {table_name}")
             QMessageBox.information(None, "Success",
                 f"Vocabulary '{table_name}' imported into GeoPackage.")
 
-            # Refresh the GeoPackage tab vocab list and layer combos
+            # Refresh the GeoPackage tab, the layer combo and the Layer tab
+            # (vocab list, tree and the annotation widgets of the layer).
             self.plugin.geopackage_manager.refresh_vocab_list()
             self.plugin.layer_manager.refresh_layer_combos()
+            self.plugin.layer_manager.on_vocabularies_changed()
 
         except Exception as e:
             self.vocab_status_label.setText("❌ Import failed.")

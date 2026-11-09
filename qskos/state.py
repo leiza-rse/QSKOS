@@ -1,11 +1,9 @@
 # state.py
 # qskos QGIS Plugin - Shared state object
-# Typed, explicit cross-tab state passed to managers, replacing the ad-hoc
-# mutable attributes that previously lived directly on the plugin object
-# (current_feature_layer, current_vocab_layer, current_vocab_scheme, ...).
-# Making these explicit fields of a single object — instead of three globals
-# that any tab could clobber — is what fixes the multi-layer binding bug
-# (assessment items D/M).
+# The little state that is genuinely shared between tabs: the active GPKG, the
+# feature layer selected in the Layer tab (Symbology acts on it), the import
+# language and the hierarchy cache.  Which vocabulary's tree is displayed is
+# private to the Layer tab (tabs/layer.py), not shared state.
 #
 # Pure Python (no QGIS import at module level) so it can be unit-tested.
 
@@ -24,10 +22,6 @@ class QskosState:
     active_gpkg_path: Optional[str] = None
     # Feature layer currently selected in the Layer tab.
     current_feature_layer: Any = None
-    # Vocab layer currently shown in the concept tree.
-    current_vocab_layer: Any = None
-    # scheme_uri of the vocabulary currently shown in the tree.
-    current_vocab_scheme: Optional[str] = None
     # Import language for vocabularies.
     selected_language: str = "en"
     # (gpkg path, table name) -> (children_map, concept_labels).

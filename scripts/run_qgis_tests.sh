@@ -33,4 +33,5 @@ export QGIS_NO_OVERRIDE_IMPORT=1
 # tests and plugin share the same rdflib.
 export PYTHONPATH="$REPO_ROOT/qskos:$REPO_ROOT/qskos/libs${PYTHONPATH:+:$PYTHONPATH}"
 
-"$PYBIN" -m pytest tests/test_qgis_plugin.py tests/test_qgis_e2e.py "$@"
+"$PYBIN" -m pytest tests/test_qgis_plugin.py tests/test_qgis_e2e.py \
+    tests/test_qgis_regressions.py "$@"

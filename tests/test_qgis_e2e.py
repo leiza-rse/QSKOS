@@ -12,7 +12,6 @@
 #
 # Run with:  scripts/run_qgis_tests.sh  (headless, pytest-qgis)
 
-import json
 import os
 import sys
 import tempfile
@@ -146,16 +145,23 @@ def _find_tree_item(parent, uri):
     return None
 
 
-def _check_concept(plugin, uri):
-    """Tick a concept in the tree like a user would — via the real signal.
-
-    setCheckState fires itemChanged → plugin.on_tree_item_changed →
-    create_annotation_field, exercising the actual signal/slot wiring.
-    """
+def _select_vocab(plugin, layer, scheme_uri):
+    """Pick the feature layer in the combo and the vocabulary in the list,
+    like a user would; returns the LayerManager."""
     lm = plugin.layer_manager
-    lm.load_concept_tree(
-        plugin.state.current_feature_layer, plugin.state.current_vocab_layer
-    )
+    lm.feature_layer_combo.setLayer(layer)
+    lm.refresh_vocab_list()   # bindings may have been written outside the UI
+    for i in range(lm.vocab_list.count()):
+        if lm.vocab_list.item(i).data(Qt.UserRole) == scheme_uri:
+            lm.vocab_list.setCurrentRow(i)
+    assert lm._shown_scheme == scheme_uri
+    return lm
+
+
+def _check_concept(scenario, layer, uri, scheme_uri=None):
+    """Tick a concept in the tree like a user would — via the real signals:
+    combo -> vocab list -> tree checkbox -> itemChanged -> field creation."""
+    lm = _select_vocab(scenario.plugin, layer, scheme_uri or scenario.scheme_uri)
     item = _find_tree_item(lm.tree_view.invisibleRootItem(), uri)
     assert item is not None, f"concept {uri} not found in tree"
     item.setCheckState(0, Qt.Checked)
@@ -163,13 +169,13 @@ def _check_concept(plugin, uri):
 
 def _annotate_existing_feature(layer, name, uri, value):
     """Set an annotation value on an existing feature, as the ValueRelation
-    editor widget would (JSON array of concept URIs in a text field)."""
+    editor widget does for a JSON field (a list of concept URIs)."""
     feat = _feat_by_name(layer, name)
     assert feat is not None, f"feature {name} not found"
     idx = layer.fields().lookupField(uri)
     assert idx != -1
     layer.startEditing()
-    assert layer.changeAttributeValue(feat.id(), idx, json.dumps(value))
+    assert layer.changeAttributeValue(feat.id(), idx, list(value))
     assert layer.commitChanges()
 
 
@@ -307,9 +313,7 @@ class TestAnnotationWorkflow:
     def test_tree_check_creates_annotation_field(self, scenario):
         """Ticking a concept in the tree (real signal wiring) creates the field."""
         plugin = scenario.plugin
-        plugin.state.current_feature_layer = scenario.layer_a
-        plugin.state.current_vocab_layer = _vocab_layer(scenario)
-        _check_concept(plugin, CHILD_URI)
+        _check_concept(scenario, scenario.layer_a, CHILD_URI)
 
         assert scenario.layer_a.fields().lookupField(CHILD_URI) != -1
         setup = scenario.layer_a.editorWidgetSetup(
@@ -321,9 +325,7 @@ class TestAnnotationWorkflow:
         """Regression guard: editing feature values must never delete stored
         annotation values (the pre-refactor bug)."""
         plugin = scenario.plugin
-        plugin.state.current_feature_layer = scenario.layer_a
-        plugin.state.current_vocab_layer = _vocab_layer(scenario)
-        _check_concept(plugin, CHILD_URI)
+        _check_concept(scenario, scenario.layer_a, CHILD_URI)
 
         layer = scenario.layer_a
         name_idx = layer.fields().lookupField("name")
@@ -349,7 +351,7 @@ class TestAnnotationWorkflow:
         # Re-edit the annotation value itself (ValueRelation re-pick).
         layer.startEditing()
         assert layer.changeAttributeValue(
-            fid, idx, json.dumps([CHILD_URI, ROOT_URI])
+            fid, idx, [CHILD_URI, ROOT_URI]
         )
         assert layer.commitChanges()
         feat = _feat_by_fid(layer, fid)
@@ -371,9 +373,7 @@ class TestAnnotationWorkflow:
 
         # Annotate one existing feature on each layer.
         for lyr in (scenario.layer_a, scenario.layer_b):
-            plugin.state.current_feature_layer = lyr
-            plugin.state.current_vocab_layer = _vocab_layer(scenario)
-            _check_concept(plugin, CHILD_URI)
+            _check_concept(scenario, lyr, CHILD_URI)
             _annotate_existing_feature(
                 lyr, f"obj-{lyr.name()}", CHILD_URI, [CHILD_URI]
             )
@@ -391,7 +391,7 @@ class TestAnnotationWorkflow:
         """Binding the same vocabulary to additional layers must never drop the
         first layer's binding (regression for the reported 'first layer was
         gone' symptom). Drives the REAL UI path: combo selection + the vocab
-        checkbox toggle that fires _on_vocab_binding_toggled."""
+        checkbox toggle that fires _on_vocab_check_toggled."""
         plugin = scenario.plugin
         lm = plugin.layer_manager
 
@@ -406,7 +406,7 @@ class TestAnnotationWorkflow:
 
         def bind_current_layer_via_checkbox():
             # Auto-selected first vocab item; toggle its checkbox -> itemChanged
-            # -> _on_vocab_binding_toggled (real signal path).
+            # -> _on_vocab_check_toggled (real signal path).
             item = lm.vocab_list.item(0)
             item.setCheckState(Qt.Checked)
 
@@ -432,11 +432,7 @@ class TestAnnotationWorkflow:
 class TestSymbologyAndExport:
     def test_symbology_generation_on_real_layer(self, scenario):
         plugin = scenario.plugin
-        plugin.state.current_feature_layer = scenario.layer_a
-        plugin.state.current_vocab_layer = _vocab_layer(scenario)
-        # Realistic flow: check the field root; the ValueRelation offers its
-        # descendants, so the feature is annotated with the child concept.
-        _check_concept(plugin, ROOT_URI)
+        _check_concept(scenario, scenario.layer_a, ROOT_URI)
         _annotate_existing_feature(
             scenario.layer_a, "obj-objects_a", ROOT_URI, [CHILD_URI]
         )
@@ -452,9 +448,7 @@ class TestSymbologyAndExport:
 
     def test_lod_export_produces_valid_turtle(self, scenario, tmp_path, monkeypatch):
         plugin = scenario.plugin
-        plugin.state.current_feature_layer = scenario.layer_a
-        plugin.state.current_vocab_layer = _vocab_layer(scenario)
-        _check_concept(plugin, CHILD_URI)
+        _check_concept(scenario, scenario.layer_a, CHILD_URI)
         _annotate_existing_feature(
             scenario.layer_a, "obj-objects_a", CHILD_URI, [CHILD_URI]
         )

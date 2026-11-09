@@ -84,6 +84,7 @@ class GeopackageManager:
         # Notify other tabs
         self.plugin.vocabulary_manager.on_gpkg_selected()
         self.plugin.layer_manager.refresh_layer_combos()
+        self.plugin.layer_manager.refresh_vocab_list()
         self.plugin.lod_export_manager.refresh_forms()
 
         short = os.path.basename(path)

@@ -31,8 +31,6 @@ def test_defaults():
     s = QskosState()
     assert s.active_gpkg_path is None
     assert s.current_feature_layer is None
-    assert s.current_vocab_layer is None
-    assert s.current_vocab_scheme is None
     assert s.selected_language == "en"
     assert s.hierarchy_cache == {}
 

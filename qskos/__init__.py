@@ -155,28 +155,11 @@ class qskos:
         if self.dock_widget:
             QTimer.singleShot(0, self.layer_manager.refresh_layer_combos)
 
-    def on_feature_layer_changed(self, layer):
-        self.layer_manager.on_feature_layer_changed(layer)
-
     def _on_tab_changed(self, index):
         """Refresh the LOD export forms whenever that tab is shown."""
         if self.tab_widget and self.tab_widget.widget(index) is \
                 self.lod_export_manager.tab_widget:
             self.lod_export_manager.refresh_forms()
-
-    def on_tree_item_changed(self, item, column):
-        """
-        Checking a concept node creates an annotation field on the feature layer.
-        Unchecking does nothing — annotation columns must be removed manually
-        via the layer attribute table.
-        """
-        if column != 0:
-            return
-        if item.checkState(0) == Qt.Checked:
-            self.layer_manager.create_annotation_field(
-                item.data(0, Qt.UserRole), item.text(0)
-            )
-        # Qt.Unchecked: intentionally no action
 
 
 # REQUIRED ENTRY POINT FOR QGIS — DO NOT REMOVE!
