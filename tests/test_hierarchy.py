@@ -5,7 +5,6 @@
 from qskos.utils.hierarchy import (
     build_hierarchy_index,
     get_descendant_uris_fast,
-    get_filtered_descendant_uris_fast,
 )
 
 
@@ -69,12 +68,6 @@ class TestDescendants:
     def test_leaf_returns_self(self):
         idx = self._index()
         assert get_descendant_uris_fast(idx, "http://c") == ["http://c"]
-
-    def test_filtered_excludes_root(self):
-        idx = self._index()
-        assert set(get_filtered_descendant_uris_fast(idx, "http://r")) == {
-            "http://a", "http://b", "http://c"
-        }
 
     def test_handles_cycle(self):
         children = build_hierarchy_index(FakeVocabLayer(_features([

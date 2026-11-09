@@ -1,7 +1,7 @@
 # hierarchy.py
 # qskos QGIS Plugin - Hierarchy Utilities
 # Pure, QGIS-free functions: hierarchy index building and descendant BFS.
-# The Qt tree-widget builder (build_concept_tree_from_layer) lives in
+# The Qt tree-widget builder (build_concept_tree_items) lives in
 # tabs/layer.py; this module intentionally has no Qt/QGIS imports so it can be
 # unit-tested without a QGIS runtime.
 # Language is baked into the prefLabel column at GPKG import time — no language
@@ -51,11 +51,3 @@ def get_descendant_uris_fast(children_map, root_uri):
             if child not in descendants:
                 queue.append(child)
     return list(descendants)
-
-
-def get_filtered_descendant_uris_fast(children_map, root_uri):
-    """Descendants of root_uri, excluding the root itself."""
-    descendants = get_descendant_uris_fast(children_map, root_uri)
-    if root_uri in descendants:
-        descendants.remove(root_uri)
-    return descendants

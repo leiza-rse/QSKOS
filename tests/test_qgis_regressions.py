@@ -231,9 +231,14 @@ class TestWidgetToSymbology:
         child_rules = {r.label(): r for r in group.children()}
         assert _rule_matches(layer, child_rules["Child"], feat)
 
-    def test_legacy_text_field_values_drive_symbology(self, scenario):
-        """Fields created as text by the 2026-10 refactor builds hold
-        '{"a","b"}'; symbology must still match them."""
+    @pytest.mark.parametrize("template", [
+        '{{"{root}","{child}"}}',     # ValueRelation widget on a text field
+        '["{root}", "{child}"]',      # json.dumps with its ', ' separator
+        '{root}|{child}',             # pipe-separated
+    ])
+    def test_legacy_text_field_values_drive_symbology(self, scenario, template):
+        """Annotation fields created as text by older builds hold string
+        arrays; symbology must match every value, not just the first."""
         plugin, layer = scenario.plugin, scenario.layer_a
         layer.startEditing()
         layer.addAttribute(QgsField(ROOT_URI, QVariant.String))
@@ -242,10 +247,13 @@ class TestWidgetToSymbology:
         layer.startEditing()
         layer.changeAttributeValue(_annotate_legacy.id(),
                                    layer.fields().lookupField(ROOT_URI),
-                                   f'{{"{CHILD_URI}"}}')
+                                   template.format(root=ROOT_URI, child=CHILD_URI))
         assert layer.commitChanges()
         _select_vocab(plugin, layer, SCHEME)
 
         plugin.symbology_manager.generate_rule_based_symbology()
         group = layer.renderer().rootRule().children()[0]
-        assert _rule_matches(layer, group, _feat_by_name(layer, "obj-objects_a"))
+        feat = _feat_by_name(layer, "obj-objects_a")
+        assert _rule_matches(layer, group, feat)
+        child_rules = {r.label(): r for r in group.children()}
+        assert _rule_matches(layer, child_rules["Child"], feat)   # 2nd value

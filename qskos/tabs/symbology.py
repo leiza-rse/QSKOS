@@ -30,13 +30,15 @@ def _field_array_expression(layer, field_name):
     """
     Expression yielding the field's values as an array.  JSON (QVariant.Map /
     List) annotation fields are arrays already; text fields written by earlier
-    plugin versions hold '{"a","b"}' or '["a","b"]' and are split first.
+    plugin versions hold '{"a","b"}', '["a", "b"]' or 'a|b' and are split
+    first: brackets, quotes and spaces (never part of a URI) are dropped and
+    '|' is treated like ',' — the same shapes parse_field_value accepts.
     """
     quoted = '"' + field_name.replace('"', '""') + '"'
     idx = layer.fields().lookupField(field_name)
     if idx != -1 and layer.fields()[idx].type() == QVariant.String:
-        return (f"string_to_array(regexp_replace({quoted}, "
-                f"'[][{{}}\"]', ''), ',')")
+        cleaned = f"regexp_replace({quoted}, '[][{{}}\" ]', '')"
+        return f"string_to_array(replace({cleaned}, '|', ','), ',')"
     return quoted
 
 
@@ -262,7 +264,7 @@ class SymbologyManager:
 
             # Annotation values may be the field concept itself or any of
             # its descendants (same domain as the ValueRelation widget).
-            all_desc = get_descendant_uris_fast(combined_children_map, field_uri)
+            all_desc = field_to_descendants[field_uri]
             field_array = _field_array_expression(layer, field_uri)
 
             # Helper: one expression testing whether the field's array of URIs
@@ -284,19 +286,6 @@ class SymbologyManager:
             )
             group_rule.setActive(True)
 
-            # "All" rule for the field root (includes self + all descendants)
-            desc_incl = get_descendant_uris_fast(combined_children_map, field_uri)
-            if desc_incl:
-                sym_all = self._default_symbol(geom_type)
-                sym_all.setColor(self._colour_for_uri(field_uri))
-                all_rule = QgsRuleBasedRenderer.Rule(
-                    symbol=sym_all,
-                    filterExp=_in_uris(desc_incl),
-                    label=f"{field_label} (All)",
-                    description="Field concept and all its descendants",
-                )
-                all_rule.setActive(True)
-                group_rule.appendChild(all_rule)
 
             # Child rules — one per concept in concepts_to_visualize
             processed = {field_uri}

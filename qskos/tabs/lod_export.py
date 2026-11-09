@@ -25,7 +25,7 @@ from ..utils.lod import (
     export_lod_ttl, derive_prefix,
     DEFAULT_OBJECT_NAMESPACE, DEFAULT_ANNOTATION_NAMESPACE,
 )
-from ..utils.rdf_model import ExportMeta, DEFAULT_LICENSE
+from ..utils.rdf_model import ExportMeta, DEFAULT_LICENSE, is_iri
 from ..utils.gpkg import (
     get_bound_vocab_schemes,
     get_vocab_entries, read_config, ROLE_VOCAB,
@@ -246,10 +246,15 @@ class LODExportManager:
             QMessageBox.warning(None, "Input Required",
                 "Please enter a dataset title.")
             return None
+        license_iri = self.license_input.currentText().strip()
+        if not is_iri(license_iri):
+            QMessageBox.warning(None, "Invalid Licence",
+                "The licence must be an IRI, e.g.\n" + DEFAULT_LICENSE)
+            return None
         return ExportMeta(
             title=title,
             creator=self.creator_input.text().strip(),
-            license=self.license_input.currentText().strip(),
+            license=license_iri,
             local_crs=self.local_crs_check.isChecked(),
         )
 

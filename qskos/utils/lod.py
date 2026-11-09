@@ -21,7 +21,7 @@ from qgis.core import QgsWkbTypes
 from .fields import parse_field_value
 from .logging import log, LEVEL_WARNING
 from .rdf_model import (
-    DEFAULT_DATA_NAMESPACE, DEFAULT_LICENSE, DEFAULT_OBJECT_NAMESPACE,
+    DEFAULT_DATA_NAMESPACE, DEFAULT_OBJECT_NAMESPACE,
     ExportMeta, FeatureRecord, LayerRecord, build_graph, ensure_trailing,
     resolve_crm_class, serialize_deterministic,
 )
