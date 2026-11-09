@@ -1,13 +1,15 @@
 # annotation.py
 # qskos QGIS Plugin - Annotation field management
-# Owns the detection, creation and reconfiguration of annotation fields and the
-# ValueRelation editor widget setup. This centralises the logic that used to be
-# copy-pasted across tabs/layer.py (create_annotation_field, _reconfigure_...,
-# reinitialize_all_...).
+# Creation and (re)configuration of annotation fields and their ValueRelation
+# editor widget.
 #
-# The pure helpers (build_value_relation_config, find_annotation_field_names)
-# have no QGIS imports and are unit-tested. The QGIS-touching functions are thin
-# adapters over them plus the field/editor API.
+# An annotation field is named after a concept URI and stored as a GeoPackage
+# JSON field (QVariant.Map).  Its ValueRelation widget offers that concept and
+# all its descendants and writes the selection as a JSON array, which the
+# symbology rules query with array_intersect().  (A text field would make the
+# widget write '{"a","b"}', which the array functions cannot read.)
+#
+# build_value_relation_config is pure; the rest are thin QGIS adapters.
 
 from PyQt5.QtCore import QVariant
 from qgis.core import QgsField, QgsEditorWidgetSetup, QgsDefaultValue
@@ -19,61 +21,103 @@ from .gpkg import F_CONCEPT, F_LABEL, F_DEF
 
 # ── Pure helpers (unit-testable, no QGIS) ─────────────────────────────────────
 
-def build_value_relation_config(vocab_layer_id, children_map, concept_uri):
+def build_value_relation_config(vocab_layer_id, children_map, concept_uri,
+                                layer_name="", layer_source=""):
     """
     Build the ValueRelation editor config for an annotation field on a concept.
 
     The widget offers concept_uri itself plus all of its descendants from the
     vocabulary, storing the concept URI and showing prefLabel.  Including the
-    concept itself guarantees there is always at least one selectable value
-    (fixes the "no boxes to check" bug for leaf concepts) and matches the
-    symbology's "field concept and all its descendants" rule.
-    vocab_layer_id is the (volatile) QGIS layer id resolved at creation time.
+    concept itself means a leaf concept still offers one value.
+
+    vocab_layer_id is the QGIS layer id; layer_name / layer_source let QGIS
+    re-resolve the vocab layer when the id no longer matches (e.g. the layer
+    was removed and re-added to the project).
     """
     target_uris = get_descendant_uris_fast(children_map, concept_uri)
     quoted = ["'" + u.replace("'", "''") + "'" for u in target_uris]
     filter_expression = f'"{F_CONCEPT}" IN ({",".join(quoted)})'
 
     return {
-        "Layer":            vocab_layer_id,
-        "Key":              F_CONCEPT,   # stored value: concept URI
-        "Value":            F_LABEL,     # displayed: prefLabel
-        "Description":      F_DEF,       # tooltip: definition
-        "FilterExpression": filter_expression,
-        "AllowMulti":       True,
-        "UseCompleter":     True,
-        "OrderByValue":     True,
+        "Layer":             vocab_layer_id,
+        "LayerName":         layer_name,
+        "LayerSource":       layer_source,
+        "LayerProviderName": "ogr",
+        "Key":               F_CONCEPT,   # stored value: concept URI
+        "Value":             F_LABEL,     # displayed: prefLabel
+        "Description":       F_DEF,       # tooltip: definition
+        "FilterExpression":  filter_expression,
+        "AllowMulti":        True,
+        "UseCompleter":      True,
+        "OrderByValue":      True,
     }
 
 
 # ── QGIS adapters ─────────────────────────────────────────────────────────────
 
+def _config_for(vocab_layer, children_map, concept_uri):
+    return build_value_relation_config(
+        vocab_layer.id(), children_map, concept_uri,
+        vocab_layer.name(), vocab_layer.source(),
+    )
+
+
+def _apply_widget(feature_layer, field_index, vocab_layer, children_map,
+                  concept_uri, label):
+    feature_layer.setEditorWidgetSetup(
+        field_index,
+        QgsEditorWidgetSetup(
+            "ValueRelation", _config_for(vocab_layer, children_map, concept_uri)
+        ),
+    )
+    feature_layer.setFieldAlias(field_index, label)
+
+
 def create_annotation_field(feature_layer, vocab_layer, children_map,
                             concept_uri, label):
     """
-    Add a text annotation field named concept_uri to feature_layer, configured
+    Add a JSON annotation field named concept_uri to feature_layer, configured
     with a ValueRelation widget listing the concept and its descendants.
-    Returns True if a new field was created, False if it already existed.
+
+    If the layer is already in edit mode the field is added to the user's
+    edit session and NOT committed (committing would also save the user's
+    unrelated pending edits); it is written when the user saves.  Otherwise
+    the field is added and committed straight away.
+
+    Returns "exists", "created" or "pending" (added to an open edit session).
+    Raises RuntimeError if QGIS refuses the change.
     """
     if feature_layer.fields().lookupField(concept_uri) != -1:
-        return False
+        return "exists"
 
-    feature_layer.startEditing()
-    feature_layer.addAttribute(QgsField(concept_uri, QVariant.String))
+    was_editing = feature_layer.isEditable()
+    if not was_editing and not feature_layer.startEditing():
+        raise RuntimeError(f"Layer '{feature_layer.name()}' cannot be edited.")
+
+    # Must match the GPKG provider's native JSON type exactly (type Map,
+    # typeName "JSON", subType String), or commitChanges() rejects the new
+    # field with "field ... is not the same" although the column was added.
+    field = QgsField(concept_uri, QVariant.Map, "JSON", 0, 0, "", QVariant.String)
+    if not feature_layer.addAttribute(field):
+        if not was_editing:
+            feature_layer.rollBack()
+        raise RuntimeError(f"Could not add field '{concept_uri}'.")
     feature_layer.updateFields()
 
     field_index = feature_layer.fields().lookupField(concept_uri)
     feature_layer.setDefaultValueDefinition(
-        field_index, QgsDefaultValue("'[]'", False)
+        field_index, QgsDefaultValue("array()", False)
     )
+    _apply_widget(feature_layer, field_index, vocab_layer, children_map,
+                  concept_uri, label)
 
-    config = build_value_relation_config(vocab_layer.id(), children_map, concept_uri)
-    feature_layer.setEditorWidgetSetup(
-        field_index, QgsEditorWidgetSetup("ValueRelation", config)
-    )
-    feature_layer.setFieldAlias(field_index, label)
-    feature_layer.commitChanges()
-    return True
+    if was_editing:
+        return "pending"
+    if not feature_layer.commitChanges():
+        errors = "; ".join(feature_layer.commitErrors())
+        feature_layer.rollBack()
+        raise RuntimeError(f"Could not save field '{concept_uri}': {errors}")
+    return "created"
 
 
 def reconfigure_annotation_field(feature_layer, vocab_layer, children_map,
@@ -87,11 +131,8 @@ def reconfigure_annotation_field(feature_layer, vocab_layer, children_map,
     if field_index == -1:
         return False
 
-    config = build_value_relation_config(vocab_layer.id(), children_map, concept_uri)
-    feature_layer.setEditorWidgetSetup(
-        field_index, QgsEditorWidgetSetup("ValueRelation", config)
-    )
-    feature_layer.setFieldAlias(field_index, label)
+    _apply_widget(feature_layer, field_index, vocab_layer, children_map,
+                  concept_uri, label)
     return True
 
 

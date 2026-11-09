@@ -9,12 +9,13 @@ import hashlib
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QMessageBox
 )
+from PyQt5.QtCore import QVariant
 from PyQt5.QtGui import QColor
 from qgis.core import (
     QgsRuleBasedRenderer, QgsSymbol, QgsWkbTypes, QgsSingleSymbolRenderer
 )
 
-from ..utils.hierarchy import get_descendant_uris_fast, get_filtered_descendant_uris_fast
+from ..utils.hierarchy import get_descendant_uris_fast
 from ..utils.fields import parse_field_value
 from ..utils.gpkg import (
     get_bound_vocab_schemes, find_vocab_table_for_scheme,
@@ -23,6 +24,20 @@ from ..utils.layers import (
     ensure_vocab_layer_loaded, layer_table_name,
 )
 from ..utils.logging import log, LEVEL_WARNING
+
+
+def _field_array_expression(layer, field_name):
+    """
+    Expression yielding the field's values as an array.  JSON (QVariant.Map /
+    List) annotation fields are arrays already; text fields written by earlier
+    plugin versions hold '{"a","b"}' or '["a","b"]' and are split first.
+    """
+    quoted = '"' + field_name.replace('"', '""') + '"'
+    idx = layer.fields().lookupField(field_name)
+    if idx != -1 and layer.fields()[idx].type() == QVariant.String:
+        return (f"string_to_array(regexp_replace({quoted}, "
+                f"'[][{{}}\"]', ''), ',')")
+    return quoted
 
 
 class SymbologyManager:
@@ -245,20 +260,18 @@ class SymbologyManager:
             if not concepts_to_visualize:
                 continue
 
-            all_desc = get_filtered_descendant_uris_fast(
-                combined_children_map, field_uri
-            )
-            if not all_desc:
-                continue
+            # Annotation values may be the field concept itself or any of
+            # its descendants (same domain as the ValueRelation widget).
+            all_desc = get_descendant_uris_fast(combined_children_map, field_uri)
+            field_array = _field_array_expression(layer, field_uri)
 
-            # Helper: build a single expression testing whether the field's
-            # array of URIs intersects the given list (avoids OR-chaining one
-            # array_contains per URI).
-            def _in_uris(uris, _furi=field_uri):
+            # Helper: one expression testing whether the field's array of URIs
+            # intersects the given list (avoids OR-chaining array_contains).
+            def _in_uris(uris, _arr=field_array):
                 quoted = ", ".join(
                     "'" + u.replace("'", "''") + "'" for u in uris
                 )
-                return f'array_intersect("{_furi}", array({quoted}))'
+                return f"array_intersect({_arr}, array({quoted}))"
 
             # Group rule: matches any feature with a value in this field's subtree
             group_sym = self._default_symbol(geom_type)
@@ -267,7 +280,7 @@ class SymbologyManager:
                 symbol=group_sym,
                 filterExp=_in_uris(all_desc),
                 label=field_label,
-                description="Group: all descendants",
+                description="Group: field concept and all its descendants",
             )
             group_rule.setActive(True)
 

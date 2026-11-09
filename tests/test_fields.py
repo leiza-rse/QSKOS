@@ -1,34 +1,11 @@
 # test_fields.py
 # qskos QGIS Plugin - unit tests for utils/fields.py
-# Covers the canonical JSON encode/decode plus the lenient legacy reader.
-
-import json
+# Covers the lenient annotation value reader and annotation field detection.
 
 from qskos.utils.fields import (
-    encode_annotation_values,
     parse_field_value,
     find_annotation_field_names,
 )
-
-
-class TestEncodeAnnotationValues:
-    def test_empty(self):
-        assert encode_annotation_values([]) == "[]"
-
-    def test_none(self):
-        assert encode_annotation_values(None) == "[]"
-
-    def test_uris(self):
-        out = encode_annotation_values(["http://a", "http://b"])
-        assert json.loads(out) == ["http://a", "http://b"]
-
-    def test_strips_and_skips_blank(self):
-        out = encode_annotation_values([" http://a ", "", "http://b"])
-        assert json.loads(out) == ["http://a", "http://b"]
-
-    def test_unicode_preserved(self):
-        out = encode_annotation_values(["http://x/Ä"])
-        assert "Ä" in out
 
 
 class TestParseFieldValue:
@@ -73,9 +50,12 @@ class TestParseFieldValue:
         # '[not valid' is not JSON -> treated as a bare single value
         assert parse_field_value("[not valid") == ["[not valid"]
 
-    def test_roundtrip(self):
-        uris = ["http://a", "http://b"]
-        assert parse_field_value(encode_annotation_values(uris)) == uris
+    def test_quoted_postgres_array_from_text_field_widget(self):
+        # What QGIS's ValueRelation widget writes into a *text* field
+        # (annotation fields created by the 2026-10 refactor builds).
+        assert parse_field_value('{"http://a","http://b"}') == [
+            "http://a", "http://b",
+        ]
 
 
 class TestFindAnnotationFieldNames:

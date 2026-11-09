@@ -162,13 +162,13 @@ class TestAnnotationFieldOnRealLayers:
         created = create_annotation_field(
             feature_layer, vocab_layer, children_map, "http://child", "Child"
         )
-        assert created is True
+        assert created == "created"
 
-        # Re-creating the same field must be a no-op (returns False).
+        # Re-creating the same field must be a no-op.
         again = create_annotation_field(
             feature_layer, vocab_layer, children_map, "http://child", "Child"
         )
-        assert again is False
+        assert again == "exists"
 
         # Field must exist with the right editor widget type.
         idx = feature_layer.fields().lookupField("http://child")

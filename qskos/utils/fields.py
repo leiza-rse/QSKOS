@@ -1,31 +1,21 @@
 # fields.py
 # qskos QGIS Plugin - Field Utilities
-# Canonical (de)serialisation of annotation values plus a lenient reader for
-# legacy data.  The canonical on-disk representation of an annotation field is
-# a JSON-encoded list of concept URIs, e.g. '["uri1","uri2"]'.
+# Reading annotation values.  Annotation fields are GeoPackage JSON fields
+# (QVariant.Map in QGIS); the ValueRelation widget stores the selected concept
+# URIs there as a JSON array, which PyQGIS hands back as a Python list.
+# parse_field_value also tolerates the string shapes older plugin versions
+# wrote (JSON text, '{a,b}' Postgres-style arrays, pipe-separated).
 
 import json
-
-
-def encode_annotation_values(values):
-    """
-    Canonical serialisation of a list of concept URIs into the on-disk
-    representation (a JSON array string).  Returns '[]' for empty/None input.
-    """
-    if not values:
-        return "[]"
-    cleaned = [str(v).strip() for v in values if str(v).strip()]
-    return json.dumps(cleaned, ensure_ascii=False)
 
 
 def parse_field_value(val):
     """
     Parse an annotation field value into a list of URIs.
 
-    The canonical form is a JSON array string; this function also tolerates
-    legacy shapes (a real list, PostgreSQL array, pipe-separated, a bare
-    string) so previously-created annotation data keeps displaying/exporting.
-    New data is always written via encode_annotation_values.
+    The normal shape is a list (JSON field).  Strings are parsed leniently
+    (JSON array text, '{a,b}', 'a|b', a bare URI) so data written into the
+    text fields of earlier plugin versions keeps working.  NULL -> [].
     """
     if val is None:
         return []
