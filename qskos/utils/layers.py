@@ -1,19 +1,16 @@
 # layers.py
 # qskos QGIS Plugin - QGIS layer adapter
-# Thin adapters over QGIS vector layers (path/table extraction, loading a
-# hidden vocab layer into the project, and extracting feature/geometry data
-# for LOD export). These need QGIS, so they live apart from the pure
-# data-access layer (utils/gpkg.py) and pure graph builder (utils/lod.py),
-# which have no QGIS imports and are unit-tested without a QGIS runtime.
+# Thin adapters over QGIS vector layers: path/table extraction and loading a
+# hidden vocab layer into the project.  They need QGIS, so they live apart
+# from the pure data-access layer (utils/gpkg.py).  The LOD export adapter is
+# utils/lod.py (QGIS) on top of the pure model in utils/rdf_model.py.
 
-from qgis.core import QgsVectorLayer, QgsProject, QgsWkbTypes
+from qgis.core import QgsVectorLayer, QgsProject
 
 from .gpkg import (
     norm_path, INTERNAL_GROUP,
     gpkg_path_from_source, table_name_from_source,
 )
-from .fields import parse_field_value
-from .lod import ogc_crs_uri, sf_class_from_names
 
 
 def layer_gpkg_path(layer):
@@ -66,59 +63,3 @@ def ensure_vocab_layer_loaded(gpkg_path, table_name):
     group.setExpanded(False)
 
     return layer
-
-
-def extract_layer_spec(layer, annotation_fields, object_id, object_label="",
-                       object_type=""):
-    """
-    Extract the pure data structure for utils.lod.build_lod_graph from a QGIS
-    feature layer. Reads each feature once, parses annotation field values, and
-    captures geometry as WKT + CRS URI + sf class.
-
-    Returns a spec dict with keys:
-        object_id, object_label, object_type, features
-    where each feature has: values, wkt, crs_uri, sf_class.
-    """
-    fields = layer.fields()
-    crs_uri = ogc_crs_uri(layer.crs().authid() if layer.crs() else "")
-
-    features = []
-    for feat in layer.getFeatures():
-        values_by_field = {}
-        for field_name in annotation_fields:
-            fidx = fields.lookupField(field_name)
-            if fidx == -1:
-                continue
-            values = parse_field_value(feat[fidx])
-            if values:
-                values_by_field[field_name] = values
-        if not values_by_field:
-            continue
-
-        feat_data = {
-            "values": values_by_field,
-            "wkt": None,
-            "crs_uri": crs_uri,
-            "sf_class": None,
-        }
-        geom = feat.geometry()
-        if geom and not geom.isNull() and not geom.isEmpty():
-            geom_type = geom.type()
-            type_name = {
-                QgsWkbTypes.PolygonGeometry: "Polygon",
-                QgsWkbTypes.PointGeometry: "Point",
-                QgsWkbTypes.LineGeometry: "Line",
-            }.get(geom_type)
-            if type_name:
-                feat_data["wkt"] = str(geom.asWkt())
-                feat_data["sf_class"] = sf_class_from_names(
-                    type_name, geom.isMultipart()
-                )
-        features.append(feat_data)
-
-    return {
-        "object_id": object_id,
-        "object_label": object_label,
-        "object_type": object_type,
-        "features": features,
-    }

@@ -26,7 +26,7 @@ from qgis.gui import QgsGui
 from PyQt5.QtCore import Qt, QVariant
 from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget
 
-from test_qgis_e2e import (  # noqa: F401  (fixtures)
+from tests.test_qgis_e2e import (  # noqa: F401  (fixtures)
     _annotate_existing_feature, _check_concept, _feat_by_name,
     _find_tree_item, _make_gpkg_feature_layer, _select_vocab, real_iface,
     scenario, SCHEME, SKOS_TTL, ROOT_URI, CHILD_URI,

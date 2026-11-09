@@ -1,0 +1,61 @@
+flowchart LR
+    qskos_Annotation["qskos:Annotation"]
+    qskos_Catalog["qskos:Catalog"]
+    qskos_Dataset["qskos:Dataset"]
+    qskos_Distribution["qskos:Distribution"]
+    qskos_Feature["qskos:Feature"]
+    qskos_FeatureLayer["qskos:FeatureLayer"]
+    qskos_FieldConcept["qskos:FieldConcept"]
+    qskos_Geometry["qskos:Geometry"]
+    qskos_LocalCoordinateSystem["qskos:LocalCoordinateSystem"]
+    qskos_MappedObject["qskos:MappedObject"]
+    qskos_ValueConcept["qskos:ValueConcept"]
+    crm_E13_Attribute_Assignment["crm:E13_Attribute_Assignment"]
+    crm_E18_Physical_Thing["crm:E18_Physical_Thing"]
+    crm_E53_Place["crm:E53_Place"]
+    crm_E55_Type["crm:E55_Type"]
+    crm_E73_Information_Object["crm:E73_Information_Object"]
+    crmgeo_SP4_Spatial_Coordinate_Reference_System["crmgeo:SP4_Spatial_Coordinate_Reference_System"]
+    geo_Feature["geo:Feature"]
+    geo_FeatureCollection["geo:FeatureCollection"]
+    geo_Geometry["geo:Geometry"]
+    skos_Concept["skos:Concept"]
+    dcat_Catalog["dcat:Catalog"]
+    dcat_Dataset["dcat:Dataset"]
+    dcat_Distribution["dcat:Distribution"]
+    oa_Annotation["oa:Annotation"]
+    oa_Selector["oa:Selector"]
+    oa_SpecificResource["oa:SpecificResource"]
+    qskos_Annotation -->|subClassOf| crm_E13_Attribute_Assignment
+    qskos_Annotation -->|subClassOf| oa_Annotation
+    qskos_Catalog -->|subClassOf| crm_E73_Information_Object
+    qskos_Catalog -->|subClassOf| dcat_Catalog
+    qskos_Dataset -->|subClassOf| crm_E73_Information_Object
+    qskos_Dataset -->|subClassOf| dcat_Dataset
+    qskos_Distribution -->|subClassOf| crm_E73_Information_Object
+    qskos_Distribution -->|subClassOf| dcat_Distribution
+    qskos_Feature -->|subClassOf| crm_E53_Place
+    qskos_Feature -->|subClassOf| geo_Feature
+    qskos_Feature -->|subClassOf| oa_SpecificResource
+    qskos_FeatureLayer -->|subClassOf| crm_E73_Information_Object
+    qskos_FeatureLayer -->|subClassOf| geo_FeatureCollection
+    qskos_FieldConcept -->|subClassOf| crm_E55_Type
+    qskos_FieldConcept -->|subClassOf| skos_Concept
+    qskos_Geometry -->|subClassOf| crm_E73_Information_Object
+    qskos_Geometry -->|subClassOf| geo_Geometry
+    qskos_Geometry -->|subClassOf| oa_Selector
+    qskos_LocalCoordinateSystem -->|subClassOf| crmgeo_SP4_Spatial_Coordinate_Reference_System
+    qskos_MappedObject -->|subClassOf| crm_E18_Physical_Thing
+    qskos_ValueConcept -->|subClassOf| crm_E55_Type
+    qskos_ValueConcept -->|subClassOf| skos_Concept
+
+    classDef meta fill:#fbbf24,stroke:#000000,color:#000000
+    classDef cls fill:#9a3412,stroke:#000000,color:#ffffff
+    classDef real fill:#166534,stroke:#000000,color:#ffffff
+    classDef term fill:#4c1d95,stroke:#000000,color:#ffffff
+    classDef ext fill:#e2e8f0,stroke:#000000,color:#000000
+    class qskos_Annotation,qskos_Catalog,qskos_Dataset,qskos_Distribution,qskos_Feature,qskos_FeatureLayer,qskos_FieldConcept,qskos_Geometry,qskos_LocalCoordinateSystem,qskos_MappedObject,qskos_ValueConcept cls
+    class crm_E13_Attribute_Assignment,crm_E53_Place,crm_E73_Information_Object,crmgeo_SP4_Spatial_Coordinate_Reference_System,geo_Feature,geo_FeatureCollection,geo_Geometry,oa_Annotation,oa_Selector,oa_SpecificResource ext
+    class dcat_Catalog,dcat_Dataset,dcat_Distribution meta
+    class crm_E18_Physical_Thing real
+    class crm_E55_Type,skos_Concept term

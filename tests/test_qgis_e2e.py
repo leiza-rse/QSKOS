@@ -463,6 +463,7 @@ class TestSymbologyAndExport:
         assert len(manager.forms) == 1, "only objects_a has annotation fields"
         manager.forms[0]["id_widget"].setText("O.1")
         manager.forms[0]["label_widget"].setText("Test Object")
+        manager.title_input.setText("E2E export")   # required DCAT title
         manager.on_export_all_clicked()
 
         assert out.exists() and out.stat().st_size > 0
@@ -470,8 +471,14 @@ class TestSymbologyAndExport:
         from rdflib import Graph, Namespace, URIRef
 
         OA = Namespace("http://www.w3.org/ns/oa#")
+        QSKOS = Namespace("http://archaeology.link/ontology/qskos#")
         g = Graph()
         g.parse(str(out), format="turtle")
         assert len(g) > 0
-        # The annotated feature's concept must appear as the annotation target.
-        assert (None, OA.hasTarget, URIRef(CHILD_URI)) in g
+        # One annotation: field concept as qskos:attribute, the selected value
+        # as oa:hasBody, the feature as oa:hasTarget (rdf_model.py).
+        anns = list(g.subjects(QSKOS.attribute, URIRef(CHILD_URI)))
+        assert len(anns) == 1
+        assert (anns[0], OA.hasBody, URIRef(CHILD_URI)) in g
+        assert (anns[0], OA.hasTarget, None) in g
+        assert (None, QSKOS.usesVocabulary, URIRef(scenario.scheme_uri)) in g

@@ -1,0 +1,115 @@
+@prefix qskos:  <http://archaeology.link/ontology/qskos#> .       # PLACEHOLDER namespace: fix before release (a w3id.org/archlink/... IRI would be persistent)
+@prefix crm:    <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix crmgeo: <http://www.ics.forth.gr/isl/CRMgeo/> .
+@prefix geo:    <http://www.opengis.net/ont/geosparql#> .
+@prefix sf:     <http://www.opengis.net/ont/sf#> .
+@prefix oa:     <http://www.w3.org/ns/oa#> .
+@prefix as:     <http://www.w3.org/ns/activitystreams#> .
+@prefix dcat:   <http://www.w3.org/ns/dcat#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# Design rule: QSKOS asserts subClassOf / subPropertyOf only for its OWN terms.
+# Bridges between foreign properties (oa:hasTarget = crm:P140 etc.) are CONSTRUCT rules in queries.rq.
+# Exported data carries ONLY qskos: classes (plus the sf: geometry type and the CRM class chosen for the object).
+# The crosswalk to CIDOC CRM, CRMgeo, DCAT, GeoSPARQL, Web Annotation and SKOS exists only here, as rdfs:subClassOf.
+# Load this ontology into the same store and entail (RDFS) if you need it.  SPARQLing Unicorn uses the
+# properties (geo:hasGeometry, geo:asWKT, rdfs:member), not the classes, so it needs no entailment.
+
+<http://archaeology.link/ontology/qskos> a owl:Ontology ;
+    rdfs:label "QSKOS annotation ontology"@en ;
+    owl:versionInfo "0.1.0-draft" .
+
+# ================================================================ Metadata layer (DCAT 3)
+
+qskos:Catalog a owl:Class ;
+    rdfs:label "Catalog"@en ;
+    rdfs:comment "Curated collection of QSKOS datasets of one institution or project."@en ;
+    rdfs:subClassOf dcat:Catalog , crm:E73_Information_Object .
+
+qskos:Dataset a owl:Class ;
+    rdfs:label "Dataset (QSKOS export)"@en ;
+    rdfs:comment "One export package (typically one GeoPackage = one object documentation) with at least one feature layer. Carries the DCAT metadata (title, licence, creator, version) and points to the vocabularies it needs (dct:requires). Layers are dct:hasPart of the dataset."@en ;
+    rdfs:subClassOf dcat:Dataset , crm:E73_Information_Object .
+
+qskos:Distribution a owl:Class ;
+    rdfs:label "Distribution (QSKOS export file)"@en ;
+    rdfs:comment "A concrete file of a dataset: the Turtle export."@en ;
+    rdfs:subClassOf dcat:Distribution , crm:E73_Information_Object .
+
+# ================================================================ Documentation model
+
+qskos:MappedObject a owl:Class ;
+    rdfs:label "Mapped object"@en ;
+    rdfs:comment "The physical object. Instances additionally carry the CRM class chosen at export time (E19, E22, ... all below E18)."@en ;
+    rdfs:subClassOf crm:E18_Physical_Thing .
+
+qskos:FeatureLayer a owl:Class ;
+    rdfs:label "Feature layer"@en ;
+    rdfs:comment "One QGIS layer of the GeoPackage (one geometry type plus an annotation-field schema). SPARQLing Unicorn imports a geo:FeatureCollection with rdfs:member as one layer."@en ;
+    rdfs:subClassOf geo:FeatureCollection , crm:E73_Information_Object .
+
+qskos:Feature a owl:Class ;
+    rdfs:label "Mapped feature"@en ;
+    rdfs:comment "Region, line or point on a 2D derivative of the object. On the CRM side an E53 Place positioned relative to the object (crm:P157); deliberately not E26, which would say that the polygon IS the damage. crmgeo:SP6 is left out: CRMgeo makes it a subclass of geo:Geometry as well, and geo:Feature and geo:Geometry are disjoint in GeoSPARQL."@en ;
+    rdfs:subClassOf geo:Feature , oa:SpecificResource , crm:E53_Place .
+
+qskos:Geometry a owl:Class ;
+    rdfs:label "Geometry"@en ;
+    rdfs:comment "Geometry as a GeoSPARQL WKT literal prefixed with a CRS IRI (object-local or EPSG). Also a Web Annotation selector."@en ;
+    rdfs:subClassOf geo:Geometry , oa:Selector , crm:E73_Information_Object .
+
+qskos:LocalCoordinateSystem a owl:Class ;
+    rdfs:label "Object-local coordinate system"@en ;
+    rdfs:comment "Technical CRS of an orthomosaic or DEM, defined by surveyed control points of the photographic plate. Must be resolvable."@en ;
+    rdfs:subClassOf crmgeo:SP4_Spatial_Coordinate_Reference_System .
+
+qskos:Annotation a owl:Class ;
+    rdfs:label "Annotation (one per feature x field)"@en ;
+    rdfs:comment "Assigns the value concepts (oa:hasBody) of an annotation field (qskos:attribute) to a feature (oa:hasTarget). As an E13 it carries who and when (P14, P4)."@en ;
+    rdfs:subClassOf oa:Annotation , crm:E13_Attribute_Assignment .
+
+qskos:FieldConcept a owl:Class ;
+    rdfs:label "Field concept (role)"@en ;
+    rdfs:comment "Role of a vocabulary concept as an annotation field. Derived, never asserted on publisher IRIs: every object of qskos:attribute."@en ;
+    rdfs:subClassOf skos:Concept , crm:E55_Type .
+
+qskos:ValueConcept a owl:Class ;
+    rdfs:label "Value concept (role)"@en ;
+    rdfs:comment "Role of a concept chosen as a value. Derived: every object of oa:hasBody of a qskos:Annotation."@en ;
+    rdfs:subClassOf skos:Concept , crm:E55_Type .
+
+# ================================================================ Properties
+
+qskos:attribute a owl:ObjectProperty ;
+    rdfs:label "attribute (field concept)"@en ;
+    rdfs:comment "The concept that defines the annotation field. Stored per annotation because skos:broaderTransitive cannot reconstruct in which field a value was recorded."@en ;
+    rdfs:subPropertyOf crm:P177_assigned_property_of_type ;
+    rdfs:domain qskos:Annotation ;
+    rdfs:range skos:Concept .
+
+qskos:hasAttribute a owl:ObjectProperty ;
+    rdfs:label "has annotation field"@en ;
+    rdfs:comment "Layer schema: the configured field concepts, even where no annotation exists yet."@en ;
+    rdfs:domain qskos:FeatureLayer ; rdfs:range skos:Concept .
+
+qskos:usesVocabulary a owl:ObjectProperty ;
+    rdfs:label "uses vocabulary"@en ;
+    rdfs:comment "Vocabulary binding of the layer (qskos_layer_config in the GeoPackage)."@en ;
+    rdfs:domain qskos:FeatureLayer ; rdfs:range skos:ConceptScheme .
+
+qskos:inCoordinateSystem a owl:ObjectProperty ;
+    rdfs:label "in coordinate system"@en ;
+    rdfs:comment "Explicit, machine-readable binding of a geometry to its local CRS, in addition to the IRI prefix in the WKT literal (which only SPARQLing Unicorn parses). Candidate for alignment with crmgeo:Q9_is_expressed_in_terms_of once SP5 is settled."@en ;
+    rdfs:domain qskos:Geometry ; rdfs:range qskos:LocalCoordinateSystem .
+
+qskos:definedByRaster a owl:DatatypeProperty ;
+    rdfs:label "defined by raster (name)"@en ;
+    rdfs:domain qskos:LocalCoordinateSystem ; rdfs:range xsd:string .
+
+# Metadata properties are NOT reinvented: dct:title, dct:description, dct:creator, dct:publisher, dct:license,
+# dct:issued, dct:modified, dcat:version, dcat:distribution, dcat:dataset, dcat:downloadURL, dcat:mediaType,
+# dct:hasPart, dct:requires, dct:subject, dct:conformsTo, oa:*, as:generator.

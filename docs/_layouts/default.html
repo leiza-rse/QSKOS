@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if page.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+<style>
+  :root { --ink:#12181f; --muted:#5d6a78; --hair:#e3e7ea; --band:#f7f8f8; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         line-height: 1.65; color: var(--ink); max-width: 56rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+  a { color:#1f5fa8; } a:hover { color:#12181f; }
+  h1,h2,h3 { line-height:1.25; margin-top:2.2rem; font-weight:600; }
+  h1 { font-size:1.8rem; } h2 { font-size:1.3rem; } h3 { font-size:1.05rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.88em; }
+  pre { background:var(--band); border:1px solid var(--hair); border-radius:6px; padding:.9rem 1rem; overflow-x:auto; }
+  :not(pre) > code { background:var(--band); padding:.12em .35em; border-radius:4px; }
+  table { border-collapse:collapse; width:100%; margin:1.2rem 0; }
+  th,td { border:1px solid var(--hair); padding:.45rem .6rem; text-align:left; vertical-align:top; font-size:.94rem; }
+  th { background:var(--band); font-weight:600; }
+  img { max-width:100%; height:auto; }
+  nav.top { border-bottom:1px solid var(--hair); padding-bottom:.8rem; margin-bottom:1.5rem; font-size:.9rem; }
+  nav.top a { margin-right:1rem; }
+</style>
+</head>
+<body>
+<nav class="top">
+  <a href="{{ '/' | relative_url }}">Overview</a>
+  <a href="{{ '/model.html' | relative_url }}">Model</a>
+  <a href="{{ '/vocabulary.html' | relative_url }}">Vocabulary</a>
+  <a href="{{ '/crosswalk.html' | relative_url }}">Crosswalk</a>
+  <a href="{{ '/report.html' | relative_url }}">Report</a>
+</nav>
+{{ content }}
+</body>
+</html>
