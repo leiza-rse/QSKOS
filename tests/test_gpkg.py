@@ -15,7 +15,9 @@ from qskos.utils.gpkg import (
     bind_feature_to_vocab,
     unbind_feature_from_vocab,
     import_vocab_to_gpkg,
+    vocab_table_name,
     norm_path,
+    CONFIG_TABLE,
     ROLE_VOCAB,
     ROLE_FEATURE,
 )
@@ -85,7 +87,8 @@ class TestVocabImport:
               "broader": None, "inScheme": "http://s"}],
             "http://scheme", "de", gpkg,
         )
-        assert table == "scheme"
+        assert table == vocab_table_name("http://scheme")
+        assert table.startswith("qskos_vocab_scheme_")
         entries = get_vocab_entries(gpkg)
         assert len(entries) == 1
         assert entries[0]["scheme_uri"] == "http://scheme"
@@ -116,7 +119,8 @@ class TestVocabImport:
               "broader": None, "inScheme": "http://s"}],
             "http://scheme", "en", gpkg,
         )
-        assert find_vocab_table_for_scheme(gpkg, "http://scheme") == "scheme"
+        assert find_vocab_table_for_scheme(gpkg, "http://scheme") == \
+            vocab_table_name("http://scheme")
         assert find_vocab_language(gpkg, "http://scheme") == "en"
         assert find_vocab_language(gpkg, "http://missing") == "en"
 
@@ -129,6 +133,100 @@ class TestVocabImport:
         )
         assert scheme_exists_in_gpkg(gpkg, "http://scheme") is True
         assert scheme_exists_in_gpkg(gpkg, "http://other") is False
+
+
+def _concepts(scheme, *uris):
+    return [{"concept": u, "prefLabel": u[-1], "definition": "",
+             "broader": None, "inScheme": scheme} for u in uris]
+
+
+def _table_rows(gpkg, table):
+    conn = sqlite3.connect(gpkg)
+    try:
+        return sorted(r[0] for r in conn.execute(f'SELECT concept FROM "{table}"'))
+    finally:
+        conn.close()
+
+
+class TestVocabTableIsolation:
+    """Regression: two schemes ending in the same path segment used to share
+    (and overwrite) one table, breaking the first vocabulary's tree and
+    annotation widgets."""
+
+    def test_same_last_segment_gets_separate_tables(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        t1 = import_vocab_to_gpkg(_concepts("http://a.org/scheme", "http://a/1"),
+                                  "http://a.org/scheme", "en", gpkg)
+        t2 = import_vocab_to_gpkg(_concepts("http://b.org/scheme", "http://b/1"),
+                                  "http://b.org/scheme", "en", gpkg)
+        assert t1 != t2
+        assert _table_rows(gpkg, t1) == ["http://a/1"]
+        assert _table_rows(gpkg, t2) == ["http://b/1"]
+
+    def test_never_targets_a_feature_table(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        conn = sqlite3.connect(gpkg)
+        conn.execute("CREATE TABLE objects (fid INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("INSERT INTO objects (name) VALUES ('keep me')")
+        conn.commit()
+        conn.close()
+        import_vocab_to_gpkg(_concepts("http://x.org/objects", "http://x/1"),
+                             "http://x.org/objects", "en", gpkg)
+        conn = sqlite3.connect(gpkg)
+        assert conn.execute("SELECT name FROM objects").fetchall() == [("keep me",)]
+        conn.close()
+
+    def test_reimport_reuses_table_and_replaces_content(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        t1 = import_vocab_to_gpkg(_concepts("http://s", "http://old"),
+                                  "http://s", "en", gpkg)
+        t2 = import_vocab_to_gpkg(_concepts("http://s", "http://new"),
+                                  "http://s", "de", gpkg)
+        assert t1 == t2
+        assert _table_rows(gpkg, t1) == ["http://new"]
+        entries = get_vocab_entries(gpkg)
+        assert len(entries) == 1 and entries[0]["language"] == "de"
+
+    def test_legacy_table_name_is_kept_on_reimport(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        ensure_config_table(gpkg)
+        conn = sqlite3.connect(gpkg)
+        conn.execute("CREATE TABLE scheme (fid INTEGER PRIMARY KEY AUTOINCREMENT,"
+                     " concept TEXT, prefLabel TEXT, definition TEXT,"
+                     " broader TEXT, inScheme TEXT)")
+        conn.execute(f"INSERT INTO {CONFIG_TABLE} VALUES ('scheme', ?, 'http://a/scheme', 'en')",
+                     (ROLE_VOCAB,))
+        conn.commit()
+        conn.close()
+        t = import_vocab_to_gpkg(_concepts("http://a/scheme", "http://a/1"),
+                                 "http://a/scheme", "en", gpkg)
+        assert t == "scheme"
+
+    def test_legacy_shared_table_is_split_on_reimport(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        ensure_config_table(gpkg)
+        conn = sqlite3.connect(gpkg)
+        for scheme in ("http://a/scheme", "http://b/scheme"):
+            conn.execute(f"INSERT INTO {CONFIG_TABLE} VALUES ('scheme', ?, ?, 'en')",
+                         (ROLE_VOCAB, scheme))
+        conn.commit()
+        conn.close()
+        t = import_vocab_to_gpkg(_concepts("http://a/scheme", "http://a/1"),
+                                 "http://a/scheme", "en", gpkg)
+        assert t == vocab_table_name("http://a/scheme")
+        assert find_vocab_table_for_scheme(gpkg, "http://a/scheme") == t
+        assert find_vocab_table_for_scheme(gpkg, "http://b/scheme") == "scheme"
+
+    def test_refuses_to_overwrite_foreign_table(self, tmp_path):
+        import pytest
+        gpkg = str(tmp_path / "x.gpkg")
+        conn = sqlite3.connect(gpkg)
+        conn.execute(f'CREATE TABLE "{vocab_table_name("http://s")}" (x TEXT)')
+        conn.commit()
+        conn.close()
+        with pytest.raises(ValueError):
+            import_vocab_to_gpkg(_concepts("http://s", "http://1"),
+                                 "http://s", "en", gpkg)
 
 
 class TestNormPath:
