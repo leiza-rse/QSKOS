@@ -347,7 +347,51 @@ their target layer from these globals, so the collision breaks both.
 
 ---
 
-## Suggested prioritisation
+## N. REPRODUCED BUG — Annotation fields show no values to check (empty ValueRelation) — ✅ RESOLVED (2026-10-23)
+
+**Reported symptom (user, 2026-10-23, after the M refactor landed).** After
+importing a vocabulary and checking concepts in the tree, the annotation fields
+are created on the feature layer ("attributes seem to have been set"), but when
+annotating a feature the ValueRelation editor offers **no boxes to check** as
+values. The same report notes that connecting further layers to the same
+vocabulary still makes the first layer appear to "lose" its annotation values.
+
+**Root cause (independent of item M's global-state collision).** The ValueRelation
+config for an annotation field was built from **descendants only**, excluding the
+concept itself:
+
+```
+utils/annotation.py  build_value_relation_config
+    target_uris = get_filtered_descendant_uris_fast(children_map, concept_uri)
+    if not target_uris:
+        filter_expression = "0"   # concept has no descendants -> nothing to pick
+```
+
+For any concept with **no descendants** (a leaf), `target_uris` is empty and the
+filter degenerates to `"0"`, so the ValueRelation resolves zero rows — the field
+exists and stores `[]`, but there is nothing to select. This is precisely the
+"no boxes to check" symptom. It also cascades to the "first layer lost its
+values" perception in item M point 4: a layer whose annotation fields are all
+leaf-based shows empty widgets and looks broken even though the binding itself
+is intact (the multi-layer binding itself is verified correct — see the passing
+`test_second_layer_binding_is_independent` / `test_third_layer_binding_keeps_first_layer_bound`).
+
+**Fix.** Build the ValueRelation from **the concept itself plus all its
+descendants** (`get_descendant_uris_fast`, which includes the root). This:
+- guarantees at least one selectable value for every checked concept (leaf
+  concepts now offer themselves), and
+- matches the symbology's "field concept and all its descendants" rule
+  (`tabs/symbology.py`), keeping the annotation value domain consistent with the
+  rendering rules.
+
+**Tests added.**
+- `tests/test_qgis_plugin.py::test_value_relation_config_filter_targets_concept_and_descendants`
+- `tests/test_qgis_plugin.py::test_leaf_concept_still_offers_a_value`
+- `tests/test_qgis_e2e.py::TestAnnotationWorkflow::test_third_layer_binding_keeps_first_layer_bound`
+  (drives the real combo + checkbox-toggle UI path across three layers and asserts
+  the first layer stays bound).
+
+---
 
 1. **Fix the data model** (A + G): decide canonical annotation value storage →
    kills the guessing cascade and most of layer.py's re-init hack.

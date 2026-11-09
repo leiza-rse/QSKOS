@@ -12,7 +12,7 @@
 from PyQt5.QtCore import QVariant
 from qgis.core import QgsField, QgsEditorWidgetSetup, QgsDefaultValue
 
-from .hierarchy import get_filtered_descendant_uris_fast
+from .hierarchy import get_descendant_uris_fast
 from .fields import find_annotation_field_names
 from .gpkg import F_CONCEPT, F_LABEL, F_DEF
 
@@ -23,16 +23,16 @@ def build_value_relation_config(vocab_layer_id, children_map, concept_uri):
     """
     Build the ValueRelation editor config for an annotation field on a concept.
 
-    The widget offers the descendants of concept_uri (excluding the concept
-    itself) from the vocabulary, storing the concept URI and showing prefLabel.
+    The widget offers concept_uri itself plus all of its descendants from the
+    vocabulary, storing the concept URI and showing prefLabel.  Including the
+    concept itself guarantees there is always at least one selectable value
+    (fixes the "no boxes to check" bug for leaf concepts) and matches the
+    symbology's "field concept and all its descendants" rule.
     vocab_layer_id is the (volatile) QGIS layer id resolved at creation time.
     """
-    target_uris = get_filtered_descendant_uris_fast(children_map, concept_uri)
-    if not target_uris:
-        filter_expression = "0"   # concept has no descendants — nothing to pick
-    else:
-        quoted = ["'" + u.replace("'", "''") + "'" for u in target_uris]
-        filter_expression = f'"{F_CONCEPT}" IN ({",".join(quoted)})'
+    target_uris = get_descendant_uris_fast(children_map, concept_uri)
+    quoted = ["'" + u.replace("'", "''") + "'" for u in target_uris]
+    filter_expression = f'"{F_CONCEPT}" IN ({",".join(quoted)})'
 
     return {
         "Layer":            vocab_layer_id,
@@ -52,8 +52,8 @@ def create_annotation_field(feature_layer, vocab_layer, children_map,
                             concept_uri, label):
     """
     Add a text annotation field named concept_uri to feature_layer, configured
-    with a ValueRelation widget listing the concept's descendants. Returns True
-    if a new field was created, False if it already existed.
+    with a ValueRelation widget listing the concept and its descendants.
+    Returns True if a new field was created, False if it already existed.
     """
     if feature_layer.fields().lookupField(concept_uri) != -1:
         return False
@@ -80,7 +80,7 @@ def reconfigure_annotation_field(feature_layer, vocab_layer, children_map,
                                  concept_uri, label):
     """
     Re-point an existing annotation field's ValueRelation widget to the
-    descendants of concept_uri. Returns True if the field was found and
+    concept and its descendants. Returns True if the field was found and
     reconfigured, False otherwise.
     """
     field_index = feature_layer.fields().lookupField(concept_uri)

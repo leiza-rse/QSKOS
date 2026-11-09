@@ -387,6 +387,47 @@ class TestAnnotationWorkflow:
         feat_b = _feat_by_name(scenario.layer_b, "obj-objects_b")
         assert parse_field_value(feat_b[CHILD_URI]) == [CHILD_URI]
 
+    def test_third_layer_binding_keeps_first_layer_bound(self, scenario):
+        """Binding the same vocabulary to additional layers must never drop the
+        first layer's binding (regression for the reported 'first layer was
+        gone' symptom). Drives the REAL UI path: combo selection + the vocab
+        checkbox toggle that fires _on_vocab_binding_toggled."""
+        plugin = scenario.plugin
+        lm = plugin.layer_manager
+
+        from qskos.utils.gpkg import get_bound_vocab_schemes
+        from PyQt5.QtCore import Qt
+
+        # Create a third feature layer in the same GPKG (extends it, not overwrite).
+        layer_c = _make_gpkg_feature_layer(
+            scenario.gpkg, "objects_c", second=True
+        )
+        QgsProject.instance().addMapLayer(layer_c)
+
+        def bind_current_layer_via_checkbox():
+            # Auto-selected first vocab item; toggle its checkbox -> itemChanged
+            # -> _on_vocab_binding_toggled (real signal path).
+            item = lm.vocab_list.item(0)
+            item.setCheckState(Qt.Checked)
+
+        # Bind all three layers through the real combo + checkbox path.
+        for lyr in (scenario.layer_a, scenario.layer_b, layer_c):
+            lm.feature_layer_combo.setLayer(lyr)
+            bind_current_layer_via_checkbox()
+            assert get_bound_vocab_schemes(
+                scenario.gpkg, lyr.name()
+            ) == [scenario.scheme_uri], f"{lyr.name()} not bound"
+
+        # Every layer must still be bound, including the very first.
+        assert get_bound_vocab_schemes(
+            scenario.gpkg, "objects_a"
+        ) == [scenario.scheme_uri]
+
+        # Switching back to the first layer must still show it bound.
+        lm.feature_layer_combo.setLayer(scenario.layer_a)
+        assert lm.vocab_list.count() > 0
+        assert lm.vocab_list.item(0).checkState() == Qt.Checked
+
 
 class TestSymbologyAndExport:
     def test_symbology_generation_on_real_layer(self, scenario):

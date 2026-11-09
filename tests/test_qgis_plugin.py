@@ -176,8 +176,9 @@ class TestAnnotationFieldOnRealLayers:
         setup = feature_layer.editorWidgetSetup(idx)
         assert setup.type() == "ValueRelation"
 
-    def test_value_relation_config_filter_targets_descendants(self):
-        """The config filter must list only descendants, excluding the concept itself."""
+    def test_value_relation_config_filter_targets_concept_and_descendants(self):
+        """The config filter must list the concept itself plus its descendants
+        (regression: a leaf concept must still offer itself as a value)."""
         from qskos.utils.annotation import build_value_relation_config
         from qskos.utils.hierarchy import build_hierarchy_index
 
@@ -188,6 +189,23 @@ class TestAnnotationFieldOnRealLayers:
         )
         assert config["Layer"] == vocab_layer.id()
         assert config["AllowMulti"] is True
+        # root plus its child must both be offered
+        assert "http://child" in config["FilterExpression"]
+        assert "http://root" in config["FilterExpression"]
+
+    def test_leaf_concept_still_offers_a_value(self):
+        """A concept with no descendants must still yield a usable filter
+        (itself), not the degenerate '0' that produced no checkboxes."""
+        from qskos.utils.annotation import build_value_relation_config
+        from qskos.utils.hierarchy import build_hierarchy_index
+
+        vocab_layer = _make_vocab_layer()
+        children_map, _ = build_hierarchy_index(vocab_layer)
+        config = build_value_relation_config(
+            vocab_layer.id(), children_map, "http://child"
+        )
+        # not the empty/degenerate filter
+        assert config["FilterExpression"] != "0"
         assert "http://child" in config["FilterExpression"]
 
 
