@@ -10,33 +10,42 @@ by theme; each item says *what's wrong* and *what to do instead*.
 
 ---
 
-## Resolution status
+## Resolution status (revised 2026-11-09)
 
-Items below marked **✅ RESOLVED** have been addressed by the refactor
-documented in [`context/refactoring.md`](./refactoring.md) (milestones M0–M8).
-Each resolved item is updated in place; see the milestone commits for detail.
+The first refactor round (milestones M0–M8 in
+[`refactoring.md`](./refactoring.md)) marked every item resolved, but testing
+with **two vocabularies** in real QGIS still broke the trees and annotation
+widgets. A second round re-checked each claim against real QGIS 3.44; the
+table below is the verified state. Items O–S at the end are the bugs that
+round found.
 
-| Item | Status | Milestone |
-|------|--------|-----------|
-| A — fields heuristics / data model | ✅ RESOLVED | M1, M2 |
-| B — duplicated `tabs/layer.py` logic | ✅ RESOLVED | M2 |
+| Item | Status | Where |
+|------|--------|-------|
+| A — fields heuristics / data model | ✅ RESOLVED (lenient reader; fields detected by concept-URI name) | M2, `utils/fields.py` |
+| B — duplicated `tabs/layer.py` logic | ✅ RESOLVED | `utils/annotation.py`, Layer tab rewrite |
 | C — per-concept feature queries | ✅ RESOLVED | M2, M5 |
-| D — shared mutable global state | ✅ RESOLVED | M3 |
+| D — shared mutable global state | ✅ RESOLVED in round 2 — M3 only moved the globals into `QskosState`; the Layer tab now owns its displayed vocabulary | `tabs/layer.py` |
 | E — hierarchy cache keying | ✅ RESOLVED | M5 |
 | F — symbology expression blow-up | ✅ RESOLVED | M6 |
-| G — `QVariant.Map` annotation field | ✅ RESOLVED | M1 |
+| G — `QVariant.Map` annotation field | ↩️ REVERSED — M1's text fields broke symbology (item Q); JSON fields are the right choice | `utils/annotation.py` |
 | H — `selected_language` global | ⚠️ PARTIAL | M3 |
-| I — testability / no tests | ✅ RESOLVED (pure pytest + QGIS-bound pytest-qgis) | M0, M4 |
-| J — swallowed exceptions | ✅ RESOLVED | M7 |
+| I — testability / no tests | ✅ RESOLVED (pytest + pytest-qgis in real QGIS) | M0, M4 |
+| J — swallowed exceptions | ✅ RESOLVED (plus a silently failing commit, item R) | M7 |
 | K — misc nits (colour, polyhierarchy, logging) | ⚠️ PARTIAL | M6, M7 |
-| L — RDF heuristics / LOD namespace | ⚠️ PARTIAL | M8 |
-| M — reproduced multi-layer binding bug | ✅ RESOLVED | M2, M3, M7 |
+| L — RDF heuristics / LOD namespace | ⚠️ PARTIAL (export model replaced by `rdf-export-dev`) | M8 |
+| M — multi-layer binding bug | ✅ RESOLVED in round 2 — real causes were items O and P, not the globals | |
+| N — empty ValueRelation for leaf concepts | ✅ RESOLVED (field offers concept + descendants) | |
+| O — two vocabularies shared one GPKG table | ✅ RESOLVED | `utils/gpkg.py` |
+| P — Layer tab reset itself on combo refresh | ✅ RESOLVED | `tabs/layer.py` |
+| Q — text annotation fields unreadable by symbology | ✅ RESOLVED | `utils/annotation.py`, `tabs/symbology.py` |
+| R — field commit failed silently / committed user edits | ✅ RESOLVED | `utils/annotation.py` |
+| S — imported vocabulary missing from Layer tab | ✅ RESOLVED | `tabs/vocabulary.py`, `tabs/layer.py` |
 
-**Remaining (out of scope / follow-up):** persisting the LOD object namespace
-in the GeoPackage config (item L), the `libs/` sys.modules purge hardening, and
-some redundant config-table re-reads (item K); optionally clean up the QGIS 3.44
-deprecation warnings surfaced by the new QGIS-bound tests — tracked as
-follow-ups.
+Every item O–S has a regression test in `tests/test_qgis_regressions.py`.
+
+**Remaining (follow-up):** persisting the LOD object namespace in the GPKG
+config (L), the `libs/` sys.modules purge hardening, redundant config-table
+re-reads (K), QGIS 3.44 deprecation warnings.
 
 ---
 
@@ -403,3 +412,54 @@ descendants** (`get_descendant_uris_fast`, which includes the root). This:
 6. **Replace global state with a state object** (D), then tighten error handling (J).
 7. **Tighten the RDF heuristics** (L) so the new flexible ingestion doesn't
    silently mis-parse heterogeneous sources.
+
+---
+
+## Round 2 findings (2026-11-09) — reproduced in real QGIS 3.44
+
+### O. Two vocabularies shared one GPKG table — ✅ RESOLVED
+
+**This was the reported bug.** `_safe_table_name()` named the vocabulary table
+after the scheme URI's last segment, so `http://a.org/scheme` and
+`http://b.org/scheme` both became table `scheme`, and the second import
+`DROP`ped the first. Vocab A's tree then showed B's concepts (or nothing), and
+A's annotation fields filtered on URIs that no longer existed → empty widgets.
+A scheme ending in a feature table's name would have dropped that table.
+**Fix:** tables are `qskos_vocab_<slug>_<hash>`, always resolved through the
+config table (legacy names keep working; a legacy table shared by two schemes
+is split on re-import). Re-import empties and refills the table instead of
+dropping it, and refuses to touch a table that isn't a qskos vocabulary.
+
+### P. The Layer tab reset itself — ✅ RESOLVED
+
+`QgsMapLayerComboBox` re-emits `layerChanged` for the *same* layer when its
+filter is refreshed (which happens whenever a vocab layer is added to the
+project). The handler cleared the list and tree and re-selected row 0, so the
+vocabulary the user was looking at vanished. **Fix:** same-layer re-emits are
+ignored; the displayed vocabulary is private Layer tab state set only by list
+selection and kept across refreshes.
+
+### Q. Text annotation fields broke symbology — ✅ RESOLVED
+
+M1 switched annotation fields to `QVariant.String` as "canonical JSON". QGIS's
+ValueRelation widget does not write JSON into text fields: it writes
+`{"a","b"}`, and `array_intersect("field", …)` in the symbology rules fails
+with *Cannot convert … to array*. The tests missed it because they wrote
+`json.dumps()` directly instead of going through the widget. **Fix:** JSON
+fields again (the widget stores a real list); symbology also splits legacy
+text values. `TestWidgetToSymbology` drives the real editor widget.
+
+### R. Field creation failed silently and committed user edits — ✅ RESOLVED
+
+`QgsField(name, QVariant.Map)` doesn't match the GPKG provider's native JSON
+type (typeName `JSON`, subType `String`), so `commitChanges()` returned False
+("field … is not the same") after OGR had already added the column. The
+plugin never checked the return value. Creating a field while the layer was in
+edit mode also committed the user's unrelated pending edits. **Fix:** the
+exact native type is declared, commit results are checked, and in edit mode
+the field joins the user's edit session without committing.
+
+### S. A new vocabulary didn't appear in the Layer tab — ✅ RESOLVED
+
+The Layer tab's list was only built on feature-layer change. **Fix:** imports
+and GPKG changes refresh it and re-point existing annotation widgets.

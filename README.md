@@ -55,11 +55,10 @@ The plugin is designed for researchers who need to:
 
 ### 6. Linked Open Data (LOD) Export
 - Export annotated feature data as Turtle (`.ttl`) Linked Open Data
-- Enter your institution's object namespace, then set an Object ID, Label and CRM class for each annotated layer
-- Annotation columns map to `oa:motivatedBy`, selected concept values map to `oa:hasTarget`
-- Includes CIDOC-CRM, CRMdig (`crmdig:D9_Data_Object`), and GeoSPARQL geometry triples
+- Enter the object namespace and the dataset metadata (title, licence, creator), then an Object ID, Label and CRM class for each annotated layer
+- Writes DCAT 3 metadata, GeoSPARQL features/geometries and one Web Annotation per feature and field (field concept → `qskos:attribute`, selected values → `oa:hasBody`); the CIDOC CRM crosswalk lives in `ontology/qskos.ttl`
 - "Export All Layers to Turtle" merges everything into one file; layers sharing the same Object ID are aggregated into the same object automatically
-
+- Model documentation: `docs/` (rebuilt with `python tools/main.py`), change log: `CHANGELOG.md`
 
 ## How to Use
 
@@ -153,3 +152,13 @@ The QSKOS plugin uses a dedicated configuration table (`qskos_layer_config`) ins
 All vocabulary tables are stored directly in the GeoPackage as attribute tables, making your data completely self-contained and portable.
 
 The QSKOS plugin bridges the gap between geographic data and semantic web technologies, enabling richer, more meaningful spatial data management while maintaining data portability and project independence.
+
+## Development
+
+The plugin package lives in `qskos/`.
+
+    uv run pytest                    # pure unit tests + export tests, no QGIS needed
+    scripts/run_qgis_tests.sh        # QGIS-bound and end-to-end tests (headless, real QGIS)
+    python tools/main.py             # rebuild ontology example, diagrams and docs/
+
+`scripts/install_qgis_ubuntu.sh` sets up QGIS and the test venv on Ubuntu/WSL.

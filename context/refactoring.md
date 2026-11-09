@@ -211,7 +211,10 @@ scripts/run_qgis_tests.sh               # runs the QGIS-bound suites (offscreen)
   repo root. QGIS only needs `metadata.txt` + `__init__.py` at the installed
   folder's root.
 
-### M1 — ✅ DONE — Canonical JSON annotation storage (A, G)
+### M1 — ↩️ REVERSED — Canonical JSON annotation storage (A, G)
+
+> **2026-11-09:** text fields made the ValueRelation widget write `{"a","b"}`, which broke
+> symbology. Annotation fields are GPKG JSON fields again; see assessment items Q/R.
 
 - `utils/fields.py`: add `encode_annotation_values(list[str]) -> str` (JSON) and
   keep `parse_field_value` as a lenient reader (accept JSON, list, pipe, single).
@@ -234,6 +237,9 @@ scripts/run_qgis_tests.sh               # runs the QGIS-bound suites (offscreen)
 - Tests: `test_annotation.py` (with adapter fakes / pytest-qgis).
 
 ### M3 — ✅ DONE — `QskosState` + explicit injection (D, M)
+
+> **2026-11-09:** this did not fix item M (behaviour was unchanged). The real causes were
+> assessment items O and P; the displayed vocabulary is now private to the Layer tab.
 
 - New `state.py` defining a `QskosState` dataclass (`active_gpkg_path`,
   `current_feature_layer`, `current_vocab_layer`, `current_vocab_scheme`,
