@@ -6,10 +6,10 @@ To install the QSKOS plugin in QGIS:
 
 1. **Download the plugin**: Click on the green "<> Code" button on the GitHub repository page and select "Download ZIP" from the popout menu.
 2. **Install in QGIS**: In QGIS, go to Plugins → Manage and Install Plugins → Install From Zip.
-3. **Select the ZIP file**: In the file picker, navigate to and select the downloaded ZIP file.
+3. **Select the ZIP file**: The plugin lives in the `qskos/` subdirectory. When zipping for QGIS, zip the **contents of `qskos/`** (so `metadata.txt` and `__init__.py` are at the root of the zip), not the whole repository.
 4. **Complete installation**: Click on "Install Plugin" and accept the security warning by clicking "Yes".
 
-The plugin bundles the pure-Python libraries it needs to read RDF vocabularies (rdflib and its dependencies) inside its `libs/` folder, so no manual `pip install` is required.
+The plugin bundles the pure-Python libraries it needs to read RDF vocabularies (rdflib and its dependencies) inside its `qskos/libs/` folder, so no manual `pip install` is required.
 
 ## What is QSKOS?
 
@@ -55,11 +55,10 @@ The plugin is designed for researchers who need to:
 
 ### 6. Linked Open Data (LOD) Export
 - Export annotated feature data as Turtle (`.ttl`) Linked Open Data
-- Enter your institution's object namespace, then set an Object ID, Label and CRM class for each annotated layer
-- Annotation columns map to `oa:motivatedBy`, selected concept values map to `oa:hasTarget`
-- Includes CIDOC-CRM, CRMdig (`crmdig:D9_Data_Object`), and GeoSPARQL geometry triples
+- Enter the object namespace and the dataset metadata (title, licence, creator), then an Object ID, Label and CRM class for each annotated layer
+- Writes DCAT 3 metadata, GeoSPARQL features/geometries and one Web Annotation per feature and field (field concept → `qskos:attribute`, selected values → `oa:hasBody`); the CIDOC CRM crosswalk lives in `ontology/qskos.ttl`
 - "Export All Layers to Turtle" merges everything into one file; layers sharing the same Object ID are aggregated into the same object automatically
-
+- Model documentation: `docs/` (rebuilt with `python tools/main.py`), change log: `CHANGELOG.md`
 
 ## How to Use
 
@@ -153,3 +152,15 @@ The QSKOS plugin uses a dedicated configuration table (`qskos_layer_config`) ins
 All vocabulary tables are stored directly in the GeoPackage as attribute tables, making your data completely self-contained and portable.
 
 The QSKOS plugin bridges the gap between geographic data and semantic web technologies, enabling richer, more meaningful spatial data management while maintaining data portability and project independence.
+
+## Development
+
+The plugin package lives in `qskos/`. Contributors (people and coding agents) start with `AGENTS.md`;
+planning, decisions and status live in `context/` (`STATUS.md`, `roadmap.md`, `work-packages/`, `adr/`).
+
+    make test        # pure unit tests + export tests, no QGIS needed
+    make test-qgis   # QGIS-bound and end-to-end tests (headless, real QGIS)
+    make docs        # rebuild ontology example, diagrams and docs/
+    make next        # which work packages can be started
+
+`scripts/install_qgis_ubuntu.sh` sets up QGIS and the test venv on Ubuntu/WSL.

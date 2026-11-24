@@ -1,1 +1,6 @@
 __pycache__/
+.venv/
+.venv-qgis/
+.pytest_cache/
+.qgis-settings/
+*.egg-info/

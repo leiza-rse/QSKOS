@@ -1,0 +1,21 @@
+[project]
+name = "qskos"
+version = "1.0"
+description = "Semantic annotation of QGIS vector features using SKOS vocabularies"
+requires-python = ">=3.9"
+# No runtime dependencies are declared here: the plugin bundles rdflib and its
+# dependencies inside qskos/libs/ so it runs inside QGIS's own Python without
+# pip. This project file only manages the DEVELOPMENT environment (tests, lint).
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The plugin lives in the qskos/ subdirectory. Tests/ sits at the repo root,
+# OUTSIDE the plugin package, so the plugin root __init__.py (which imports
+# PyQt5/QGIS at import time) is never executed. The pure subpackages
+# (qskos/utils, qskos/tabs) and bundled libs are added to sys.path in
+# tests/conftest.py so tests `import utils.fields` without a QGIS runtime.

@@ -1,0 +1,45 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix qskos: <http://archaeology.link/ontology/qskos#> .
+@prefix geo:   <http://www.opengis.net/ont/geosparql#> .
+@prefix oa:    <http://www.w3.org/ns/oa#> .
+@prefix dcat:  <http://www.w3.org/ns/dcat#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix crm:   <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+
+# Minimal gate for the export: validate exports independently of the plugin, e.g. with pyshacl.
+
+qskos:DatasetShape a sh:NodeShape ; sh:targetClass qskos:Dataset ;
+    sh:property [ sh:path dct:title ;        sh:minCount 1 ] ,
+                [ sh:path dct:license ;      sh:minCount 1 ] ,
+                [ sh:path dct:creator ;      sh:minCount 1 ] ,
+                [ sh:path dcat:distribution ; sh:minCount 1 ] ,
+                [ sh:path dct:hasPart ;      sh:minCount 1 ; sh:class qskos:FeatureLayer ] ,
+                [ sh:path dct:requires ;     sh:minCount 1 ; sh:class skos:ConceptScheme ] .
+
+qskos:LayerShape a sh:NodeShape ; sh:targetClass qskos:FeatureLayer ;
+    sh:property [ sh:path qskos:usesVocabulary ; sh:minCount 1 ] .
+
+qskos:FeatureShape a sh:NodeShape ; sh:targetClass qskos:Feature ;
+    sh:property [ sh:path geo:hasGeometry ; sh:minCount 1 ; sh:maxCount 1 ; sh:class qskos:Geometry ] ,
+                [ sh:path oa:hasSource ;    sh:minCount 1 ; sh:class qskos:MappedObject ] ,
+                [ sh:path crm:P157_is_at_rest_relative_to ; sh:minCount 1 ] .
+
+qskos:GeometryShape a sh:NodeShape ; sh:targetClass qskos:Geometry ;
+    sh:property [ sh:path geo:asWKT ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype geo:wktLiteral ;
+                  sh:pattern "^<https?://[^>]+>\\s" ;                      # CRS IRI prefix, otherwise Unicorn loses the CRS
+                  sh:message "WKT literal must start with <CRS-IRI>" ] ,
+                [ sh:path qskos:inCoordinateSystem ; sh:maxCount 1 ; sh:class qskos:LocalCoordinateSystem ] .   # present when the local-CRS option was used
+
+qskos:AnnotationShape a sh:NodeShape ; sh:targetClass qskos:Annotation ;
+    sh:property [ sh:path oa:hasTarget ;    sh:minCount 1 ; sh:maxCount 1 ; sh:class qskos:Feature ] ,
+                [ sh:path qskos:attribute ; sh:minCount 1 ; sh:maxCount 1 ] ,
+                [ sh:path oa:hasBody ;      sh:minCount 1 ] ,
+                [ sh:path oa:motivatedBy ;  sh:hasValue oa:classifying ] ,
+                [ sh:path dct:creator ;     sh:minCount 1 ] ,
+                [ sh:path dct:created ;     sh:minCount 1 ; sh:datatype xsd:dateTime ] .
+
+qskos:CrsShape a sh:NodeShape ; sh:targetClass qskos:LocalCoordinateSystem ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .

@@ -1,0 +1,216 @@
+# vocabulary.py
+# qskos QGIS Plugin - Vocabulary Tab Logic
+# Imports SKOS sources into the active GeoPackage as attribute tables.
+
+import os
+
+from PyQt5.QtWidgets import (
+    QWidget, QFormLayout, QPushButton, QLineEdit, QComboBox,
+    QFileDialog, QLabel, QMessageBox, QInputDialog
+)
+
+from ..utils.rdf_model import is_absolute_iri
+from ..utils.skos import (
+    default_scheme_uri,
+    load_skos_source,
+    mint_concept_iris,
+    scheme_uri_from_concepts,
+)
+from ..utils.gpkg import (
+    import_vocab_to_gpkg,
+    scheme_exists_in_gpkg,
+    get_vocab_entries,
+)
+from ..utils.layers import ensure_vocab_layer_loaded
+
+
+class VocabularyManager:
+    def __init__(self, plugin_instance):
+        self.plugin = plugin_instance
+        self.source_type_combo  = None
+        self.language_combo     = None
+        self.source_input       = None
+        self.load_vocab_button  = None
+        self.vocab_status_label = None
+
+    # ── Tab setup ──────────────────────────────────────────────────────────────
+
+    def setup_vocab_tab(self):
+        """Build and return the Vocabulary import tab widget."""
+        layout = QFormLayout()
+
+        self.source_type_combo = QComboBox()
+        self.source_type_combo.addItems([
+            "Local RDF File (auto-detect)",
+            "Local CSV (.csv)",
+            "Remote URL",
+        ])
+        self.source_type_combo.currentIndexChanged.connect(
+            self._on_source_type_changed
+        )
+        layout.addRow("Source Type:", self.source_type_combo)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["en", "de"])
+        self.language_combo.setCurrentText("en")
+        self.language_combo.currentTextChanged.connect(self._on_language_changed)
+        layout.addRow("Language:", self.language_combo)
+
+        self.source_input = QLineEdit()
+        self.source_input.setPlaceholderText("Enter file path or URL…")
+        layout.addRow("Source:", self.source_input)
+
+        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn.clicked.connect(self.browse_skos_file)
+        layout.addRow("", self.browse_btn)
+
+        self.load_vocab_button = QPushButton("Load into GeoPackage")
+        self.load_vocab_button.clicked.connect(self.on_load_vocab_clicked)
+        self.load_vocab_button.setEnabled(False)   # enabled once a GPKG is selected
+        layout.addRow("", self.load_vocab_button)
+
+        self.vocab_status_label = QLabel("Select a GeoPackage first.")
+        layout.addRow("", self.vocab_status_label)
+
+        tab = QWidget()
+        tab.setLayout(layout)
+        return tab
+
+    # ── Called by GeopackageManager when a GPKG is loaded ─────────────────────
+
+    def on_gpkg_selected(self):
+        """Enable the import button now that a GPKG is available."""
+        if self.load_vocab_button:
+            self.load_vocab_button.setEnabled(True)
+        if self.vocab_status_label:
+            self.vocab_status_label.setText("Ready to import.")
+
+    # ── UI callbacks ───────────────────────────────────────────────────────────
+
+    def _on_language_changed(self, lang):
+        self.plugin.state.selected_language = lang
+
+    def _on_source_type_changed(self, idx):
+        """Hide the file browse button when loading from a remote URL."""
+        is_url = idx == 2
+        if self.browse_btn:
+            self.browse_btn.setVisible(not is_url)
+        if self.source_input:
+            self.source_input.setPlaceholderText(
+                "Enter URL…" if is_url else "Enter file path…"
+            )
+
+    def browse_skos_file(self):
+        """Open a file dialog to pick a local SKOS source file."""
+        filters = {
+            0: "RDF Files (*.ttl *.jsonld *.json *.rdf *.nt *.n3 *.trig);;All Files (*)",
+            1: "CSV Files (*.csv);;All Files (*)",
+        }
+        idx = self.source_type_combo.currentIndex()
+        if idx not in filters:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Select SKOS File", "", filters[idx]
+        )
+        if path:
+            self.source_input.setText(path)
+
+    def on_load_vocab_clicked(self):
+        """Parse the SKOS source and import it into the active GeoPackage."""
+        if not self.plugin.state.active_gpkg_path:
+            QMessageBox.warning(None, "No GeoPackage",
+                "Please select a GeoPackage in the GeoPackage tab first.")
+            return
+
+        source_text = self.source_input.text().strip()
+        if not source_text:
+            QMessageBox.warning(None, "Input Required",
+                "Please enter a file path or URL.")
+            return
+
+        source_type_map = {0: "rdf", 1: "csv", 2: "url"}
+        source_type = source_type_map.get(
+            self.source_type_combo.currentIndex(), "ttl"
+        )
+
+        try:
+            concepts = load_skos_source(
+                source_text, source_type, self.plugin.state.selected_language
+            )
+            if not concepts:
+                raise ValueError("No concepts loaded from source.")
+
+            scheme_uri = self.extract_or_prompt_scheme_uri(concepts, source_text)
+            if not scheme_uri:
+                return   # user cancelled
+            concepts = mint_concept_iris(concepts, scheme_uri)
+
+            # Import guard — confirm before replacing an existing vocab
+            if scheme_exists_in_gpkg(self.plugin.state.active_gpkg_path, scheme_uri):
+                reply = QMessageBox.question(
+                    None, "Vocabulary Already Exists",
+                    f"A vocabulary for\n'{scheme_uri}'\nalready exists in this "
+                    f"GeoPackage.\n\nReplace it?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply != QMessageBox.Yes:
+                    return
+
+            table_name = import_vocab_to_gpkg(
+                concepts,
+                scheme_uri,
+                self.plugin.state.selected_language,
+                self.plugin.state.active_gpkg_path,
+            )
+            # The table content was replaced: drop the cached hierarchy and
+            # refill the in-memory copy the trees and widgets read.
+            self.plugin.state.invalidate_vocab_cache(
+                self.plugin.state.active_gpkg_path, table_name
+            )
+            ensure_vocab_layer_loaded(
+                self.plugin.state.active_gpkg_path, table_name, refresh=True
+            )
+
+            self.vocab_status_label.setText(f"✅ Imported: {table_name}")
+            QMessageBox.information(None, "Success",
+                f"Vocabulary '{table_name}' imported into GeoPackage.")
+
+            # Refresh the GeoPackage tab, the layer combo and the Layer tab
+            # (vocab list, tree and the annotation widgets of the layer).
+            self.plugin.geopackage_manager.refresh_vocab_list()
+            self.plugin.layer_manager.refresh_layer_combos()
+            self.plugin.layer_manager.on_vocabularies_changed()
+
+        except Exception as e:
+            self.vocab_status_label.setText("❌ Import failed.")
+            QMessageBox.critical(None, "Import Error",
+                f"Failed to import vocabulary:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def extract_or_prompt_scheme_uri(self, concepts, source_hint=""):
+        """
+        The scheme URI from the concepts, or ask for one until the user enters
+        an absolute URI or cancels (None).  Local concept IDs are appended to
+        it, so it decides how the vocabulary's concept IRIs are minted.
+        """
+        found = scheme_uri_from_concepts(concepts)
+        if found:
+            return found
+
+        text = default_scheme_uri(source_hint)
+        intro = ("No concept scheme URI (skos:inScheme) found.\n"
+                 "Concept IDs that are not URIs are appended to it:\n"
+                 "<scheme URI>/<ID>.\n\nConcept Scheme URI:")
+        prompt = intro
+        while True:
+            text, ok = QInputDialog.getText(
+                None, "Enter Concept Scheme URI", prompt, text=text)
+            if not ok:
+                return None
+            text = text.strip()
+            if is_absolute_iri(text):
+                return text
+            prompt = ("Not an absolute URI (e.g. https://… or file:///…).\n\n"
+                      + intro)

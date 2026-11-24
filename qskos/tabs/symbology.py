@@ -1,0 +1,340 @@
+# symbology.py
+# qskos QGIS Plugin - Symbology Tab Logic
+# Generates hierarchical rule-based symbology from annotation fields.
+# Covers ALL vocabularies bound to the current feature layer automatically —
+# the user does not need to be viewing any particular vocab in the tree.
+
+import hashlib
+
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QPushButton, QLabel, QMessageBox
+)
+from PyQt5.QtCore import QVariant
+from PyQt5.QtGui import QColor
+from qgis.core import (
+    QgsRuleBasedRenderer, QgsSymbol, QgsWkbTypes, QgsSingleSymbolRenderer
+)
+
+from ..utils.hierarchy import get_descendant_uris_fast
+from ..utils.fields import parse_field_value
+from ..utils.gpkg import (
+    get_bound_vocab_schemes, find_vocab_table_for_scheme,
+)
+from ..utils.layers import (
+    ensure_vocab_layer_loaded, layer_table_name,
+)
+from ..utils.logging import log, LEVEL_WARNING
+
+
+def _field_array_expression(layer, field_name):
+    """
+    Expression yielding the field's values as an array.  JSON (QVariant.Map /
+    List) annotation fields are arrays already; text fields written by earlier
+    plugin versions hold '{"a","b"}', '["a", "b"]' or 'a|b' and are split
+    first: brackets, quotes and spaces (never part of a URI) are dropped and
+    '|' is treated like ',' — the same shapes parse_field_value accepts.
+    """
+    quoted = '"' + field_name.replace('"', '""') + '"'
+    idx = layer.fields().lookupField(field_name)
+    if idx != -1 and layer.fields()[idx].type() == QVariant.String:
+        cleaned = f"regexp_replace({quoted}, '[][{{}}\" ]', '')"
+        return f"string_to_array(replace({cleaned}, '|', ','), ',')"
+    return quoted
+
+
+class SymbologyManager:
+    def __init__(self, plugin_instance):
+        self.plugin = plugin_instance
+        self.symbology_status_label = None
+
+    # ── Tab setup ──────────────────────────────────────────────────────────────
+
+    def setup_symbology_tab(self):
+        """Build and return the Symbology tab widget."""
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel(
+            "Generate hierarchical rule-based symbology grouped by annotation "
+            "fields.\nAll bound vocabularies are included automatically."
+        ))
+
+        gen_btn = QPushButton("Generate Rules from Annotations")
+        gen_btn.clicked.connect(self.generate_rule_based_symbology)
+        layout.addWidget(gen_btn)
+
+        reset_btn = QPushButton("Reset to Default Symbology")
+        reset_btn.clicked.connect(self.reset_symbology)
+        layout.addWidget(reset_btn)
+
+        self.symbology_status_label = QLabel(
+            "Select a feature layer with annotation fields."
+        )
+        layout.addWidget(self.symbology_status_label)
+        layout.addStretch()
+
+        tab = QWidget()
+        tab.setLayout(layout)
+        return tab
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def reset_symbology(self):
+        """Reset the feature layer to a default single-symbol renderer."""
+        layer = self.plugin.state.current_feature_layer
+        if not layer:
+            QMessageBox.warning(None, "No Layer", "No feature layer selected.")
+            return
+        layer.setRenderer(QgsSingleSymbolRenderer(
+            QgsSymbol.defaultSymbol(layer.geometryType())
+        ))
+        layer.triggerRepaint()
+        self.plugin.iface.layerTreeView().refreshLayerSymbology(layer.id())
+        self.symbology_status_label.setText("✅ Symbology reset to default.")
+        QMessageBox.information(None, "Reset", "Symbology reset to default.")
+
+    def _colour_for_uri(self, uri):
+        """
+        Deterministic colour derived from a concept URI, so regenerating the
+        symbology produces the same styling (reproducible, unlike random()).
+        """
+        h = int(hashlib.md5(uri.encode("utf-8")).hexdigest(), 16)
+        return QColor(
+            (h >> 16) & 0xFF,
+            (h >> 8) & 0xFF,
+            h & 0xFF,
+        )
+
+    def _default_symbol(self, geom_type):
+        """Return a default symbol for geom_type, with a Point fallback."""
+        return (
+            QgsSymbol.defaultSymbol(geom_type)
+            or QgsSymbol.defaultSymbol(QgsWkbTypes.PointGeometry)
+        )
+
+    # ── Symbology generation ───────────────────────────────────────────────────
+
+    def generate_rule_based_symbology(self):
+        """
+        Generate hierarchical rule-based symbology for the current feature layer.
+
+        Annotation fields are detected by scanning the feature layer's existing
+        field names and matching them against concept URIs across ALL bound
+        vocabularies.  The currently displayed tree vocab does not matter here.
+        """
+        layer = self.plugin.state.current_feature_layer
+        if not layer:
+            QMessageBox.warning(None, "No Layer",
+                "Please select a feature layer first.")
+            return
+        if not self.plugin.state.active_gpkg_path:
+            QMessageBox.warning(None, "No GeoPackage", "No active GeoPackage.")
+            return
+
+        geom_type = layer.geometryType()
+        if geom_type == QgsWkbTypes.UnknownGeometry:
+            QMessageBox.warning(None, "Invalid Geometry",
+                "Cannot generate symbology for a layer with unknown geometry type.")
+            return
+
+        feature_table = layer_table_name(layer)
+        bound_schemes = get_bound_vocab_schemes(
+            self.plugin.state.active_gpkg_path, feature_table
+        )
+        if not bound_schemes:
+            QMessageBox.warning(None, "No Vocabulary",
+                "Layer is not bound to any vocabulary.")
+            return
+
+        # ── Merge hierarchies from all bound vocabularies ──────────────────────
+        combined_children_map   = {None: []}
+        combined_concept_labels = {}
+
+        for scheme_uri in bound_schemes:
+            table_name = find_vocab_table_for_scheme(
+                self.plugin.state.active_gpkg_path, scheme_uri
+            )
+            if not table_name:
+                continue
+            try:
+                vocab_layer = ensure_vocab_layer_loaded(
+                    self.plugin.state.active_gpkg_path, table_name
+                )
+            except Exception as e:
+                log(f"Skipping vocab {scheme_uri}: {e}", LEVEL_WARNING)
+                continue
+
+            children_map, concept_labels = self.plugin.state.get_hierarchy_for_layer(
+                vocab_layer
+            )
+            # Merge into combined maps (union, no duplicates)
+            for parent, children in children_map.items():
+                if parent not in combined_children_map:
+                    combined_children_map[parent] = []
+                for child in children:
+                    if child not in combined_children_map[parent]:
+                        combined_children_map[parent].append(child)
+            combined_concept_labels.update(concept_labels)
+
+        # ── Detect annotation fields ───────────────────────────────────────────
+        # Any feature layer field whose name is a known concept URI is an
+        # annotation field — independent of tree checkbox state.
+        existing_field_names = [f.name() for f in layer.fields()]
+        annotation_field_uris = [
+            uri for uri in existing_field_names
+            if uri in combined_concept_labels
+        ]
+
+
+        if not annotation_field_uris:
+            QMessageBox.warning(None, "No Annotations",
+                "No annotation fields found matching any bound vocabulary.\n"
+                "Check concepts in the Layer tab to create annotation fields first.")
+            return
+
+        # uri → broader lookup for ancestor walking
+        # Use a dictionary that preserves all parent relationships by using lists
+        uri_to_broader = {}
+        for parent, children in combined_children_map.items():
+            for child in children:
+                if child not in uri_to_broader:
+                    uri_to_broader[child] = []
+                if parent not in uri_to_broader[child]:
+                    uri_to_broader[child].append(parent)
+
+        field_to_descendants = {
+            field_uri: set(
+                get_descendant_uris_fast(combined_children_map, field_uri)
+            )
+            for field_uri in annotation_field_uris
+        }
+
+        root_rule = QgsRuleBasedRenderer.Rule(None)
+
+        # Single pass over features: collect which concept URIs are present in
+        # each annotation field, so we don't re-read the layer once per field.
+        field_present_uris = {
+            uri: set() for uri in annotation_field_uris
+            if layer.fields().lookupField(uri) != -1
+        }
+        for feat in layer.getFeatures():
+            for field_uri in field_present_uris:
+                values = parse_field_value(feat[field_uri])
+                if values:
+                    field_present_uris[field_uri].update(values)
+
+        for field_uri in annotation_field_uris:
+            field_label = combined_concept_labels.get(field_uri, field_uri)
+            if layer.fields().lookupField(field_uri) == -1:
+                continue
+
+            # Collect URIs actually present in this field across all features
+            valid_descendants = field_to_descendants[field_uri]
+            directly_annotated = {
+                uri for uri in field_present_uris.get(field_uri, set())
+                if uri in valid_descendants
+            }
+
+            # Walk up to collect ALL ancestor concepts between leaf and field
+            # root, following every broader parent (polyhierarchy-safe).
+            def get_ancestors(uri, _field_uri=field_uri):
+                ancestors, visited, frontier = set(), set(), [uri]
+                while frontier:
+                    current = frontier.pop()
+                    if current in visited or current == _field_uri:
+                        continue
+                    visited.add(current)
+                    parents = uri_to_broader.get(current, [])
+                    for parent in parents:
+                        if parent == current or parent in visited:
+                            continue
+                        ancestors.add(parent)
+                        if parent != _field_uri:
+                            frontier.append(parent)
+                return ancestors
+
+            # Concepts to visualise: annotated leaves + their ancestors
+            concepts_to_visualize = set()
+            for uri in directly_annotated:
+                concepts_to_visualize.add(uri)
+                for anc in get_ancestors(uri):
+                    if anc in valid_descendants:
+                        concepts_to_visualize.add(anc)
+
+            if not concepts_to_visualize:
+                continue
+
+            # Annotation values may be the field concept itself or any of
+            # its descendants (same domain as the ValueRelation widget).
+            all_desc = field_to_descendants[field_uri]
+            field_array = _field_array_expression(layer, field_uri)
+
+            # Helper: one expression testing whether the field's array of URIs
+            # intersects the given list (avoids OR-chaining array_contains).
+            def _in_uris(uris, _arr=field_array):
+                quoted = ", ".join(
+                    "'" + u.replace("'", "''") + "'" for u in uris
+                )
+                return f"array_intersect({_arr}, array({quoted}))"
+
+            # Group rule: matches any feature with a value in this field's subtree
+            group_sym = self._default_symbol(geom_type)
+            group_sym.setColor(self._colour_for_uri(field_uri))
+            group_rule = QgsRuleBasedRenderer.Rule(
+                symbol=group_sym,
+                filterExp=_in_uris(all_desc),
+                label=field_label,
+                description="Group: field concept and all its descendants",
+            )
+            group_rule.setActive(True)
+
+
+            # Child rules — one per concept in concepts_to_visualize
+            processed = {field_uri}
+            for uri in concepts_to_visualize:
+                if uri in processed:
+                    continue
+                processed.add(uri)
+
+                uri_label = combined_concept_labels.get(uri, uri)
+                desc_uris = get_descendant_uris_fast(combined_children_map, uri)
+                if not desc_uris:
+                    continue
+
+                sym_child = self._default_symbol(geom_type)
+                sym_child.setColor(self._colour_for_uri(uri))
+                child_rule = QgsRuleBasedRenderer.Rule(
+                    symbol=sym_child,
+                    filterExp=_in_uris(desc_uris),
+                    label=uri_label,
+                    description="",
+                )
+                child_rule.setActive(True)
+                group_rule.appendChild(child_rule)
+
+            # Else rule for unannotated features within this group
+            sym_else = self._default_symbol(geom_type)
+            sym_else.setColor(QColor(200, 200, 200))
+            else_rule = QgsRuleBasedRenderer.Rule(
+                symbol=sym_else,
+                filterExp="",
+                label="(Unannotated)",
+                description="",
+                elseRule=True,
+            )
+            else_rule.setActive(True)
+            group_rule.appendChild(else_rule)
+
+            root_rule.appendChild(group_rule)
+
+        if root_rule.children():
+            layer.setRenderer(QgsRuleBasedRenderer(root_rule))
+            layer.triggerRepaint()
+            self.plugin.iface.layerTreeView().refreshLayerSymbology(layer.id())
+            n = len(annotation_field_uris)
+            QMessageBox.information(None, "Success",
+                f"Generated hierarchical symbology for {n} annotation field(s).")
+            self.symbology_status_label.setText(
+                f"✅ Generated symbology for {n} field(s)."
+            )
+        else:
+            QMessageBox.information(None, "No Data",
+                "No annotation values found to generate symbology.")
