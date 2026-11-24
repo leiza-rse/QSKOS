@@ -11,3 +11,4 @@ Accepted ADRs are not re-opened by agents; if one blocks you, stop and say so.
 | [0004](0004-geopackage-single-source.md) | The GeoPackage is the single source of truth (vocabularies, bindings, annotations); the QGIS project only stores the active GPKG path. |
 | [0005](0005-export-model.md) | The export graph is built by the QGIS-free `utils/rdf_model.py`; data uses `qskos:` classes, the DCAT/GeoSPARQL/OA/CRM crosswalk lives only in `ontology/qskos.ttl`. |
 | [0006](0006-testing-in-real-qgis.md) | Pure modules are unit-tested without QGIS; everything touching QGIS is tested in real headless QGIS (pytest-qgis) through the real widgets and signals. |
+| [0007](0007-vocabulary-copies-in-memory.md) | Trees and annotation widgets read hidden in-memory copies of the vocabulary tables (filled via the plugin's own read-only SQLite access), never GeoPackage layers; the GPKG stays the source of truth. |

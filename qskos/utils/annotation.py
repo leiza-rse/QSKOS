@@ -17,7 +17,7 @@ from qgis.core import QgsField, QgsEditorWidgetSetup, QgsDefaultValue
 from .hierarchy import get_descendant_uris_fast
 from .fields import find_annotation_field_names
 from .gpkg import (
-    F_CONCEPT, F_LABEL, F_DEF,
+    F_CONCEPT, F_LABEL, F_DEF, VOCAB_PROPERTY,
     find_vocab_table_for_scheme, get_bound_vocab_schemes, has_qskos_config,
 )
 from .layers import ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name
@@ -185,3 +185,12 @@ def bind_annotation_widgets(feature_layer, get_hierarchy):
         except Exception as e:
             log(f"Cannot bind annotation widgets for {scheme_uri}: {e}",
                 LEVEL_WARNING)
+
+
+def bind_all_annotation_widgets(get_hierarchy):
+    """bind_annotation_widgets for every vector layer of the project except
+    the vocabulary copies themselves."""
+    from qgis.core import QgsMapLayer, QgsProject
+    for layer in list(QgsProject.instance().mapLayers().values()):
+        if layer.type() == QgsMapLayer.VectorLayer and not layer.customProperty(VOCAB_PROPERTY):
+            bind_annotation_widgets(layer, get_hierarchy)

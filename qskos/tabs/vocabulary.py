@@ -164,14 +164,13 @@ class VocabularyManager:
                 self.plugin.state.active_gpkg_path,
             )
             # The table content was replaced: drop the cached hierarchy and
-            # make an already-open QGIS layer re-read it.
+            # refill the in-memory copy the trees and widgets read.
             self.plugin.state.invalidate_vocab_cache(
                 self.plugin.state.active_gpkg_path, table_name
             )
-            vocab_layer = ensure_vocab_layer_loaded(
-                self.plugin.state.active_gpkg_path, table_name
+            ensure_vocab_layer_loaded(
+                self.plugin.state.active_gpkg_path, table_name, refresh=True
             )
-            vocab_layer.reload()
 
             self.vocab_status_label.setText(f"✅ Imported: {table_name}")
             QMessageBox.information(None, "Success",

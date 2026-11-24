@@ -7,6 +7,9 @@ import sqlite3
 from qskos.utils.gpkg import (
     ensure_config_table,
     has_qskos_config,
+    read_vocab_rows,
+    split_vocab_source_key,
+    vocab_source_key,
     read_config,
     get_vocab_entries,
     get_bound_vocab_schemes,
@@ -73,6 +76,28 @@ class TestHasQskosConfig:
         assert not has_qskos_config(str(shp))
         assert not has_qskos_config("")
         assert not has_qskos_config(None)
+
+
+class TestVocabCopySource:
+    def test_read_vocab_rows_is_read_only_and_complete(self, tmp_path):
+        gpkg = tmp_path / "x.gpkg"
+        table = import_vocab_to_gpkg(
+            [{"concept": "http://e.org/a", "prefLabel": "A", "definition": None,
+              "broader": None, "inScheme": "http://e.org/s"},
+             {"concept": "http://e.org/b", "prefLabel": "B", "definition": "d",
+              "broader": "http://e.org/a", "inScheme": "http://e.org/s"}],
+            "http://e.org/s", "en", str(gpkg))
+        before = gpkg.read_bytes()
+        assert read_vocab_rows(str(gpkg), table) == [
+            ("http://e.org/a", "A", "", "", "http://e.org/s"),
+            ("http://e.org/b", "B", "d", "http://e.org/a", "http://e.org/s"),
+        ]
+        assert gpkg.read_bytes() == before
+
+    def test_source_key_roundtrip(self, tmp_path):
+        key = vocab_source_key(str(tmp_path / "a.gpkg"), "qskos_vocab_x_1")
+        assert split_vocab_source_key(key) == (
+            norm_path(str(tmp_path / "a.gpkg")), "qskos_vocab_x_1")
 
 
 class TestBinding:

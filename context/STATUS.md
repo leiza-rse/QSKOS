@@ -10,11 +10,11 @@ Present tense, one page max. History goes to `CHANGELOG.md`. Update after every 
   renderer from annotations), `lod_export` (DCAT metadata box, per-layer object forms, export one/all).
   Tabs still call each other through the plugin object (`plugin.layer_manager…`) and show dialogs directly (WP-004).
 - Utils: `gpkg.py` (pure SQLite: config table, bindings, vocabulary import, ADR-0002; loose functions, one connection per call — WP-002),
-  `layers.py` (QGIS: layer path/table, load hidden vocab layers), `annotation.py` (create/reconfigure JSON annotation fields and their
+  `layers.py` (QGIS: layer path/table; hidden in-memory vocabulary copies, ADR-0007), `annotation.py` (create/reconfigure JSON annotation fields and their
   ValueRelation widget, ADR-0001/0003; `bind_annotation_widgets` runs for every layer added to the project), `fields.py` (lenient value reader), `hierarchy.py`, `skos.py` (rdflib/CSV loaders; local concept IDs minted as `<scheme>/<ID>`),
   `rdf_model.py` + `lod.py` (export, ADR-0005), `logging.py` (`QgsMessageLog`).
 - GeoPackage content: `qskos_layer_config` (vocabulary registrations + feature bindings), one `qskos_vocab_*` table per vocabulary
-  (legacy last-segment names still read), annotation fields named after concept URIs in the feature tables.
+  (legacy last-segment names still read; the project holds only in-memory copies of them, ADR-0007), annotation fields named after concept URIs in the feature tables.
 - Known gaps: imports run on the GUI thread (WP-006); `generate_rule_based_symbology` is a 226-line method (WP-003); import languages
   fixed to en/de (Q6); export IRIs can collide (Q4); PyQt5 imports block QGIS 4 (WP-007).
 

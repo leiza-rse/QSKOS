@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from .utils.hierarchy import build_hierarchy_index
 from .utils.gpkg import (
-    gpkg_path_from_source, table_name_from_source, norm_path,
+    VOCAB_PROPERTY, gpkg_path_from_source, norm_path,
+    split_vocab_source_key, table_name_from_source,
 )
 
 
@@ -32,6 +33,11 @@ class QskosState:
 
     @staticmethod
     def _vocab_key(vocab_layer):
+        # In-memory vocab copies carry their GPKG table in a custom property
+        # (ADR-0007); their source() says nothing about the GPKG.
+        marker = getattr(vocab_layer, "customProperty", lambda *_: None)(VOCAB_PROPERTY)
+        if marker:
+            return split_vocab_source_key(marker)
         return (
             norm_path(gpkg_path_from_source(vocab_layer.source())),
             table_name_from_source(vocab_layer.source()),

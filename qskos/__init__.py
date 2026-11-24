@@ -33,7 +33,9 @@ from .tabs.layer import LayerManager
 from .tabs.symbology import SymbologyManager
 from .tabs.lod_export import LODExportManager
 from .state import QskosState
-from .utils.annotation import bind_annotation_widgets
+from .utils.annotation import bind_all_annotation_widgets, bind_annotation_widgets
+from .utils.gpkg import VOCAB_PROPERTY
+from .utils.layers import remove_duplicate_vocab_layers
 
 
 class qskos:
@@ -97,6 +99,7 @@ class qskos:
         project.layerWasAdded.connect(self._on_layer_added)
         project.layerWillBeRemoved.connect(self.schedule_refresh)
         project.readProject.connect(self._restore_gpkg_path)
+        project.readProject.connect(self._after_project_read)
         project.writeProject.connect(self._save_gpkg_path)
 
     def unload(self):
@@ -107,6 +110,7 @@ class qskos:
             (project.layerWasAdded,        self._on_layer_added),
             (project.layerWillBeRemoved,   self.schedule_refresh),
             (project.readProject,          self._restore_gpkg_path),
+            (project.readProject,          self._after_project_read),
             (project.writeProject,         self._save_gpkg_path),
         ):
             try:
@@ -170,8 +174,23 @@ class qskos:
 
     def _bind_layer_widgets(self, layer_id):
         layer = QgsProject.instance().mapLayer(layer_id)
-        if layer is not None and layer.type() == QgsMapLayer.VectorLayer:
+        if (layer is not None and layer.type() == QgsMapLayer.VectorLayer
+                and not layer.customProperty(VOCAB_PROPERTY)):
             bind_annotation_widgets(layer, self.state.get_hierarchy_for_layer)
+
+    def _after_project_read(self, *_):
+        """
+        While a saved project loads, a vocabulary copy can be created before
+        the project's own (empty) copy is restored.  Once loading is over, keep
+        one copy per table and point every widget at it.  Deferred one more
+        tick: QGIS processes events during reading, and removing a layer it
+        is still loading crashes it.
+        """
+        QTimer.singleShot(0, self._dedupe_vocab_copies)
+
+    def _dedupe_vocab_copies(self):
+        remove_duplicate_vocab_layers()
+        bind_all_annotation_widgets(self.state.get_hierarchy_for_layer)
 
     def _on_tab_changed(self, index):
         """Refresh the LOD export forms whenever that tab is shown."""

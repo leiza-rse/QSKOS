@@ -25,6 +25,11 @@ F_LABEL   = "prefLabel"
 F_DEF     = "definition"
 F_BROADER = "broader"
 F_SCHEME  = "inScheme"
+VOCAB_FIELDS = (F_CONCEPT, F_LABEL, F_DEF, F_BROADER, F_SCHEME)
+
+# Custom property marking the plugin's in-memory copy of a vocabulary table;
+# its value is vocab_source_key(gpkg_path, table_name).
+VOCAB_PROPERTY = "qskos/vocab_source"
 
 
 # ─── Path helpers ─────────────────────────────────────────────────────────────
@@ -84,6 +89,40 @@ def ensure_config_table(gpkg_path):
         conn.close()
 
 
+def vocab_source_key(gpkg_path, table_name):
+    """Stable identifier of a vocabulary table: '<normalised gpkg path>|<table>'."""
+    return f"{norm_path(gpkg_path)}|{table_name}"
+
+
+def split_vocab_source_key(key):
+    """Inverse of vocab_source_key: (normalised gpkg path, table name)."""
+    path, _, table = str(key).rpartition("|")
+    return path, table
+
+
+def _connect_read_only(gpkg_path):
+    uri = Path(os.path.abspath(gpkg_path)).as_uri() + "?mode=ro"
+    return sqlite3.connect(uri, uri=True)
+
+
+def read_vocab_rows(gpkg_path, table_name):
+    """
+    All concepts of a vocabulary table as tuples in VOCAB_FIELDS order, read
+    through a read-only connection of our own (independent of QGIS's shared
+    GeoPackage connection, which can go stale on Windows, see ADR-0007).
+    """
+    cols = ",".join(f'"{c}"' for c in VOCAB_FIELDS)
+    table = table_name.replace('"', '""')
+    conn = _connect_read_only(gpkg_path)
+    try:
+        return [
+            tuple("" if v is None else str(v) for v in row)
+            for row in conn.execute(f'SELECT {cols} FROM "{table}" ORDER BY fid')
+        ]
+    finally:
+        conn.close()
+
+
 def has_qskos_config(gpkg_path):
     """
     True if gpkg_path is an existing SQLite file that holds a qskos config
@@ -93,8 +132,7 @@ def has_qskos_config(gpkg_path):
     if not gpkg_path or not os.path.isfile(gpkg_path):
         return False
     try:
-        uri = Path(os.path.abspath(gpkg_path)).as_uri() + "?mode=ro"
-        conn = sqlite3.connect(uri, uri=True)
+        conn = _connect_read_only(gpkg_path)
         try:
             row = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",

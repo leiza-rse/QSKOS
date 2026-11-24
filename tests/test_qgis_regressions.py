@@ -11,6 +11,9 @@
 #   * ticking a concept while the layer was in edit mode committed the user's
 #     unrelated pending edits
 #   * a newly imported vocabulary did not appear in the Layer tab
+#   * on Windows (GDAL 3.13) vocabulary layers read through QGIS's shared
+#     GeoPackage connection returned no rows while a layer of the same file was
+#     edited: trees and annotation widgets went empty (ADR-0007)
 #   * a layer added to a new project showed annotation widgets without
 #     options until the Layer tab was used (vocabulary layer not loaded)
 #   * a CSV vocabulary with local concept IDs (no URIs) was stored as is, and
@@ -380,3 +383,73 @@ class TestLayerAddedToProject:
             tables = {r[0] for r in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
         assert not any(t.startswith("qskos") for t in tables)
+
+
+class TestVocabularyCopies:
+    """Trees and widgets read in-memory copies of the vocabulary tables, not
+    GeoPackage layers (ADR-0007)."""
+
+    def _vocab_of(self, layer, field_name):
+        cfg = layer.editorWidgetSetup(layer.fields().lookupField(field_name)).config()
+        return QgsProject.instance().mapLayer(cfg["Layer"])
+
+    def test_widgets_and_tree_read_an_in_memory_copy(self, scenario):
+        layer = scenario.layer_a
+        _check_concept(scenario, layer, ROOT_URI)
+        _pump()
+        vocab = self._vocab_of(layer, ROOT_URI)
+        assert vocab.providerType() == "memory"
+        assert sorted(f["concept"] for f in vocab.getFeatures()) == sorted([ROOT_URI, CHILD_URI])
+        assert scenario.plugin.layer_manager._shown_vocab is vocab
+
+    def test_options_survive_unreadable_geopackage_layers(self, scenario):
+        """Stand-in for the stale connection: once the plugin has copied the
+        vocabulary, GPKG-backed layers of it would read 0 rows."""
+        import sqlite3
+        layer = scenario.layer_a
+        _check_concept(scenario, layer, ROOT_URI)
+        _pump()
+        with sqlite3.connect(scenario.gpkg) as conn:
+            conn.execute(f'ALTER TABLE "{scenario.table}" RENAME TO "{scenario.table}_gone"')
+        feat = _feat_by_name(layer, "obj-objects_a")
+        assert layer.startEditing()
+        assert _form_options(layer, ROOT_URI, feat) == ["Child", "Root"]
+        layer.rollBack()
+
+    def test_saved_project_refills_the_copies(self, scenario, tmp_path):
+        _check_concept(scenario, scenario.layer_a, ROOT_URI)
+        _pump()
+        project = QgsProject.instance()
+        path = str(tmp_path / "p.qgz")
+        assert project.write(path)
+        project.clear()
+        _pump()
+        assert project.read(path)
+        _pump()
+        layer = project.mapLayersByName("objects_a")[0]
+        vocabs = [l for l in project.mapLayers().values()
+                  if l.customProperty("qskos/vocab_source")]
+        assert len(vocabs) == 1, [l.name() for l in vocabs]
+        feat = _feat_by_name(layer, "obj-objects_a")
+        assert _form_options(layer, ROOT_URI, feat) == ["Child", "Root"]
+
+    def test_legacy_geopackage_vocab_layer_is_replaced(self, scenario):
+        from qgis.core import QgsVectorLayer
+        from qskos.utils.gpkg import INTERNAL_GROUP
+        from qskos.utils.layers import ensure_vocab_layer_loaded
+        project = QgsProject.instance()
+        for l in [l for l in project.mapLayers().values()
+                  if l.customProperty("qskos/vocab_source")]:
+            project.removeMapLayer(l.id())
+        old = QgsVectorLayer(f"{scenario.gpkg}|layername={scenario.table}",
+                             scenario.table, "ogr")
+        project.addMapLayer(old, False)
+        root = project.layerTreeRoot()
+        (root.findGroup(INTERNAL_GROUP) or root.insertGroup(0, INTERNAL_GROUP)).addLayer(old)
+        old_id = old.id()
+
+        vocab = ensure_vocab_layer_loaded(scenario.gpkg, scenario.table)
+        assert vocab.providerType() == "memory"
+        assert project.mapLayer(old_id) is None
+
+
