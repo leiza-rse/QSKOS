@@ -5,6 +5,8 @@ All notable changes to QSKOS are recorded here. Each entry says **what** changed
 ## [Unreleased] – Fix-forward refactor and agent workflow (branch `refactor/fix-forward`)
 
 ### Fixed (each with a regression test in `tests/test_qgis_regressions.py`)
+- **Vocabularies with local concept IDs could not be exported** (`utils/skos.py`, `tabs/vocabulary.py`, `utils/rdf_model.py`): a CSV with IDs like `C329A7` instead of URIs was stored as is and the export failed with `Invalid line: <C329A7> .`. The import now requires an absolute concept scheme URI (asked for when the source has none, default: the file's `file:///` URI) and mints `<scheme>/<ID>` for every concept/broader that is no URI; a `notation` column serves as the ID when `concept` is missing. The export names a non-IRI value instead of failing in the serializer.
+  *Warum:* Lokale Vokabulare mit IDs statt URIs sind der Normalfall; die Nutzer bestimmen über die Scheme-URI, wie die Konzept-URIs gebildet werden.
 - **Vocabularies overwrote each other** (`utils/gpkg.py`): table names came from the scheme URI's last segment, so `…/a/scheme` and `…/b/scheme` shared one table; the second import replaced the first and its tree and annotation widget options disappeared. Tables are now `qskos_vocab_<slug>_<hash>` (ADR-0002).
 - **Layer tab reset itself** (`tabs/layer.py`) when the layer combo re-emitted the same layer; the displayed vocabulary is now private tab state.
 - **Symbology could not read new annotations** (`utils/annotation.py`): text fields made the ValueRelation widget write `{"a","b"}`. Annotation fields are GPKG JSON fields again, with the provider's exact native type — otherwise `commitChanges()` rejects the field, which went unnoticed before (ADR-0001).

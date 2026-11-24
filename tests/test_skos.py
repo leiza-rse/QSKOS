@@ -6,7 +6,13 @@
 import os
 import tempfile
 
-from qskos.utils.skos import load_skos_source
+import pytest
+
+from qskos.utils.rdf_model import is_absolute_iri
+from qskos.utils.skos import (
+    default_scheme_uri, load_skos_source, mint_concept_iris,
+    scheme_uri_from_concepts,
+)
 
 # A minimal SKOS Turtle vocabulary: explicit broader + inScheme.
 _TTL = """\
@@ -175,7 +181,71 @@ class TestCsvLoad:
         concepts = load_skos_source(csv_path, "csv", lang="en")
         assert concepts[0]["broader"] is None
 
+    def test_notation_column_is_the_concept_id(self, tmpdir):
+        csv_path = os.path.join(tmpdir, "v.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("notation,prefLabel,broader\n")
+            f.write("C329A7,Apple,B51DAF\n")
+        concepts = load_skos_source(csv_path, "csv", lang="en")
+        assert concepts[0]["concept"] == "C329A7"
+        assert concepts[0]["broader"] == "B51DAF"
+
     def test_unsupported_source_type(self, tmpdir):
-        import pytest
         with pytest.raises(ValueError):
             load_skos_source("x", "bogus")
+
+
+SCHEME = "https://example.org/thesaurus"
+
+
+class TestLocalIds:
+    @pytest.mark.parametrize("value, expected", [
+        ("https://example.org/a", True),
+        ("file:///home/u/vocab.csv", True),
+        ("urn:uuid:0f8fad5b-d9cb-469f-a165-70867728950e", True),
+        ("C329A7", False),
+        ("A:1", False),
+        ("0f8fad5b-d9cb-469f-a165-70867728950e", False),
+        ("https://example.org/a b", False),
+        ("", False),
+        (None, False),
+    ])
+    def test_is_absolute_iri(self, value, expected):
+        assert is_absolute_iri(value) is expected
+
+    def test_local_ids_are_appended_to_the_scheme(self):
+        concepts = [
+            {"concept": "B51DAF", "broader": None, "inScheme": None},
+            {"concept": "C329A7", "broader": "B51DAF", "inScheme": ""},
+        ]
+        minted = mint_concept_iris(concepts, SCHEME)
+        assert minted[0] == {"concept": SCHEME + "/B51DAF", "broader": None,
+                             "inScheme": SCHEME}
+        assert minted[1]["concept"] == SCHEME + "/C329A7"
+        assert minted[1]["broader"] == SCHEME + "/B51DAF"
+        assert concepts[1]["concept"] == "C329A7", "input must not be mutated"
+
+    def test_iris_are_kept_and_ids_sanitized(self):
+        concepts = [
+            {"concept": "https://other.org/x", "broader": "https://other.org/y",
+             "inScheme": "https://other.org/s"},
+            {"concept": " Holz  bearbeitet ", "broader": "a/b#c<d>ä",
+             "inScheme": None},
+        ]
+        minted = mint_concept_iris(concepts, SCHEME + "#")
+        assert minted[0] == concepts[0]
+        assert minted[1]["concept"] == SCHEME + "#Holz_bearbeitet"
+        assert minted[1]["broader"] == SCHEME + "#a%2Fb%23c%3Cd%3E%C3%A4"
+        assert all(is_absolute_iri(c["concept"]) for c in minted)
+
+    def test_scheme_from_concepts_ignores_non_iris(self):
+        assert scheme_uri_from_concepts(
+            [{"inScheme": "my scheme"}, {"inScheme": SCHEME}]) == SCHEME
+        assert scheme_uri_from_concepts([{"inScheme": None}]) is None
+
+    def test_default_scheme_uri(self, tmpdir):
+        path = os.path.join(tmpdir, "vocab.csv")
+        default = default_scheme_uri(path)
+        assert default.startswith("file:///") and default.endswith("/vocab.csv")
+        assert is_absolute_iri(default)
+        assert default_scheme_uri(SCHEME) == SCHEME

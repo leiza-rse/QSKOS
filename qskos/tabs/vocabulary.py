@@ -9,7 +9,13 @@ from PyQt5.QtWidgets import (
     QFileDialog, QLabel, QMessageBox, QInputDialog
 )
 
-from ..utils.skos import load_skos_source
+from ..utils.rdf_model import is_absolute_iri
+from ..utils.skos import (
+    default_scheme_uri,
+    load_skos_source,
+    mint_concept_iris,
+    scheme_uri_from_concepts,
+)
 from ..utils.gpkg import (
     import_vocab_to_gpkg,
     scheme_exists_in_gpkg,
@@ -137,6 +143,7 @@ class VocabularyManager:
             scheme_uri = self.extract_or_prompt_scheme_uri(concepts, source_text)
             if not scheme_uri:
                 return   # user cancelled
+            concepts = mint_concept_iris(concepts, scheme_uri)
 
             # Import guard — confirm before replacing an existing vocab
             if scheme_exists_in_gpkg(self.plugin.state.active_gpkg_path, scheme_uri):
@@ -184,15 +191,27 @@ class VocabularyManager:
             traceback.print_exc()
 
     def extract_or_prompt_scheme_uri(self, concepts, source_hint=""):
-        """Extract the scheme URI from the concept list, or prompt the user."""
-        for c in concepts:
-            if c.get("inScheme"):
-                return c["inScheme"]
+        """
+        The scheme URI from the concepts, or ask for one until the user enters
+        an absolute URI or cancels (None).  Local concept IDs are appended to
+        it, so it decides how the vocabulary's concept IRIs are minted.
+        """
+        found = scheme_uri_from_concepts(concepts)
+        if found:
+            return found
 
-        default = source_hint if source_hint else "http://example.org/scheme/unknown"
-        scheme_uri, ok = QInputDialog.getText(
-            None, "Enter Concept Scheme URI",
-            "No inScheme found. Please enter the Concept Scheme URI:",
-            text=default,
-        )
-        return scheme_uri if ok else None
+        text = default_scheme_uri(source_hint)
+        intro = ("No concept scheme URI (skos:inScheme) found.\n"
+                 "Concept IDs that are not URIs are appended to it:\n"
+                 "<scheme URI>/<ID>.\n\nConcept Scheme URI:")
+        prompt = intro
+        while True:
+            text, ok = QInputDialog.getText(
+                None, "Enter Concept Scheme URI", prompt, text=text)
+            if not ok:
+                return None
+            text = text.strip()
+            if is_absolute_iri(text):
+                return text
+            prompt = ("Not an absolute URI (e.g. https://… or file:///…).\n\n"
+                      + intro)

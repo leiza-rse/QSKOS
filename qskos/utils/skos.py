@@ -4,6 +4,11 @@
 # Storage to GeoPackage is handled by gpkg.import_vocab_to_gpkg.
 
 import csv
+import os
+from pathlib import Path
+from urllib.parse import quote
+
+from .rdf_model import is_absolute_iri
 
 try:
     from rdflib import Graph, Literal
@@ -179,7 +184,8 @@ def _load_from_csv(file_path, lang="en"):
     """
     Load SKOS concepts from a CSV file.
 
-    Expected columns: concept, prefLabel, definition, broader, inScheme
+    Expected columns: concept (or notation), prefLabel, definition, broader,
+    inScheme.  concept/broader may be local IDs; see mint_concept_iris.
     prefLabel and definition may be pipe-separated multilingual strings
     (e.g. "Reinigung@de|Cleaning@en").
     """
@@ -189,7 +195,8 @@ def _load_from_csv(file_path, lang="en"):
         for row in reader:
             row = {k.strip(): v for k, v in row.items()}
             concepts.append({
-                "concept":    row.get("concept", "").strip(),
+                # 'notation' is the concept ID column of older QSKOS CSVs
+                "concept":    (row.get("concept") or row.get("notation") or "").strip(),
                 "prefLabel":  _extract_label_by_language(
                                   row.get("prefLabel", "").strip(), lang),
                 "definition": _extract_label_by_language(
@@ -227,3 +234,46 @@ def _extract_label_by_language(label_str, lang="en"):
     if lang_map:
         return next(iter(lang_map.values()))
     return plain[0] if plain else parts[0]
+
+
+# ─── Concept scheme and concept IRIs ─────────────────────────────────────────
+
+def scheme_uri_from_concepts(concepts):
+    """The first skos:inScheme of the concepts that is an absolute IRI, or None."""
+    for c in concepts:
+        if is_absolute_iri(c.get("inScheme")):
+            return c["inScheme"]
+    return None
+
+
+def default_scheme_uri(source):
+    """Suggested scheme URI for a source without one: a URL as is, a local
+    file as its file:/// URI."""
+    if is_absolute_iri(source):
+        return source
+    return Path(os.path.abspath(source)).as_uri()
+
+
+def mint_concept_iris(concepts, scheme_uri):
+    """
+    Return the concepts with every local ID (concept, broader) turned into
+    '<scheme_uri>/<id>' and inScheme set to scheme_uri where it is no IRI.
+    IDs that already are absolute IRIs are kept.  Whitespace in an ID becomes
+    '_', everything outside the unreserved URI characters is percent-encoded.
+    """
+    base = scheme_uri if scheme_uri.endswith(("/", "#")) else scheme_uri + "/"
+
+    def iri(value):
+        value = (value or "").strip()
+        if not value or is_absolute_iri(value):
+            return value
+        return base + quote("_".join(value.split()), safe="-._~")
+
+    return [
+        dict(c,
+             concept=iri(c.get("concept")),
+             broader=iri(c.get("broader")) or None,
+             inScheme=c.get("inScheme") if is_absolute_iri(c.get("inScheme"))
+             else scheme_uri)
+        for c in concepts
+    ]

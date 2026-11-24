@@ -101,6 +101,26 @@ def is_iri(s: str) -> bool:
     return str(s).startswith(("http://", "https://"))
 
 
+_ABSOLUTE_IRI = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]*://|urn:)[^\s<>\"{}|\\^`]+$")
+
+
+def is_absolute_iri(value) -> bool:
+    """True for 'scheme://…' or 'urn:…' without characters IRIs forbid.
+
+    Deliberately stricter than RFC 3987 so that local IDs and notations such
+    as 'C329A7' or 'A:1' are never mistaken for IRIs."""
+    return bool(value) and _ABSOLUTE_IRI.match(str(value)) is not None
+
+
+def concept_ref(value: str) -> URIRef:
+    """URIRef for a concept, field or scheme IRI; a clear error otherwise."""
+    if not is_absolute_iri(value):
+        raise ValueError(
+            f"'{value}' is not an absolute IRI. Re-import its vocabulary and "
+            "enter a concept scheme URI so that local IDs become IRIs.")
+    return URIRef(value)
+
+
 def resolve_crm_class(ref: str) -> URIRef:
     """'crm:E22_Human-Made_Object', 'E22_Human-Made_Object' or a full IRI -> IRI."""
     ref = str(ref or "").strip()
@@ -209,9 +229,9 @@ def build_graph(layers: List[LayerRecord], meta: ExportMeta,
         g.add((lay, RDFS.label, Literal(layer.name)))
         g.add((ds, DCTERMS.hasPart, lay))
         for fld in layer.annotation_fields:
-            g.add((lay, NS_QSKOS.hasAttribute, URIRef(fld)))
+            g.add((lay, NS_QSKOS.hasAttribute, concept_ref(fld)))
         for scheme in layer.vocab_schemes:
-            g.add((lay, NS_QSKOS.usesVocabulary, URIRef(scheme)))
+            g.add((lay, NS_QSKOS.usesVocabulary, concept_ref(scheme)))
             seen_schemes.add(scheme)
 
         # Coordinate reference system
@@ -258,9 +278,9 @@ def build_graph(layers: List[LayerRecord], meta: ExportMeta,
                 g.add((ann, RDF.type, NS_QSKOS.Annotation))
                 g.add((ann, NS_OA.motivatedBy, NS_OA.classifying))
                 g.add((ann, NS_OA.hasTarget, f_iri))
-                g.add((ann, NS_QSKOS.attribute, URIRef(fld)))
+                g.add((ann, NS_QSKOS.attribute, concept_ref(fld)))
                 for v in vals:
-                    g.add((ann, NS_OA.hasBody, URIRef(v)))
+                    g.add((ann, NS_OA.hasBody, concept_ref(v)))
                 if creator is not None:
                     g.add((ann, DCTERMS.creator, creator))
                 if meta.created:

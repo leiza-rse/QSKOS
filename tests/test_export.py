@@ -140,6 +140,13 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(len(list(g.subjects(RDF.type, QSKOS.MappedObject))), 1)
         self.assertEqual(len(list(g.subjects(RDF.type, QSKOS.FeatureLayer))), 2)
 
+    def test_local_concept_id_is_rejected_with_a_clear_error(self):
+        """A bare ID used to reach the serializer and fail as 'Invalid line'."""
+        layer = fx.make_layer()
+        layer.features[0].values[fx.EXV + "Material"] = ["C329A7"]
+        with self.assertRaisesRegex(ValueError, "'C329A7' is not an absolute IRI"):
+            build_graph([layer], fx.make_meta(), fx.VOCAB_PREFIXES)
+
     def test_helpers(self):
         self.assertEqual(slug("Top view - polygons"), "Top-view-polygons")
         self.assertEqual(str(resolve_crm_class("crm:E22_Human-Made_Object")),

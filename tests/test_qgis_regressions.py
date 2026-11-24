@@ -11,6 +11,8 @@
 #   * ticking a concept while the layer was in edit mode committed the user's
 #     unrelated pending edits
 #   * a newly imported vocabulary did not appear in the Layer tab
+#   * a CSV vocabulary with local concept IDs (no URIs) was stored as is, and
+#     the LOD export then failed with 'Invalid line: <C329A7> .'
 #
 # Run with:  scripts/run_qgis_tests.sh
 
@@ -24,7 +26,9 @@ from qgis.core import (
 )
 from qgis.gui import QgsGui
 from PyQt5.QtCore import Qt, QVariant
-from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget
+from PyQt5.QtWidgets import (
+    QApplication, QFileDialog, QInputDialog, QMessageBox, QWidget,
+)
 
 from tests.test_qgis_e2e import (  # noqa: F401  (fixtures)
     _annotate_existing_feature, _check_concept, _feat_by_name,
@@ -32,7 +36,7 @@ from tests.test_qgis_e2e import (  # noqa: F401  (fixtures)
     scenario, SCHEME, SKOS_TTL, ROOT_URI, CHILD_URI,
 )
 from qskos.utils.fields import parse_field_value
-from qskos.utils.gpkg import get_vocab_entries
+from qskos.utils.gpkg import bind_feature_to_vocab, get_vocab_entries
 
 OTHER_SCHEME = "http://other.example/scheme"   # same last segment as SCHEME
 OTHER_ROOT = "http://other.example/o_root"
@@ -68,6 +72,26 @@ def _widget_options(layer, field_name):
     assert vocab is not None and vocab.isValid(), "widget vocab layer unresolved"
     req = QgsFeatureRequest(QgsExpression(cfg["FilterExpression"]))
     return sorted(f["concept"] for f in vocab.getFeatures(req))
+
+
+def _form_options(layer, field_name, feature):
+    """Labels the real attribute form lists for a ValueRelation field — what
+    the user sees when annotating a feature."""
+    from qgis.gui import QgsAttributeForm, QgsEditorWidgetWrapper
+    from PyQt5.QtWidgets import QTableWidget
+    form = QgsAttributeForm(layer, feature)
+    _pump()
+    for w in form.findChildren(QWidget):
+        ww = QgsEditorWidgetWrapper.fromWidget(w)
+        if ww is not None and ww.field().name() == field_name:
+            tables = ww.widget().findChildren(QTableWidget)
+            assert tables, f"{type(ww.widget()).__name__} has no option table"
+            t = tables[0]
+            return sorted(t.item(r, c).text()
+                          for r in range(t.rowCount())
+                          for c in range(t.columnCount())
+                          if t.item(r, c) and t.item(r, c).text())
+    raise AssertionError(f"no widget for {field_name} in the form")
 
 
 def _tree_uris(lm):
@@ -257,3 +281,63 @@ class TestWidgetToSymbology:
         assert _rule_matches(layer, group, feat)
         child_rules = {r.label(): r for r in group.children()}
         assert _rule_matches(layer, child_rules["Child"], feat)   # 2nd value
+
+
+LOCAL_SCHEME = "https://example.org/local-thesaurus"
+LOCAL_CSV = "notation,prefLabel,broader\nB51DAF,Material,\nC329A7,Metall,B51DAF\n"
+
+
+class TestLocalIdVocabulary:
+    @pytest.mark.parametrize("answer", [LOCAL_SCHEME, None])   # None: default
+    def test_local_ids_get_scheme_iris_and_export(
+            self, scenario, tmp_path, monkeypatch, answer):
+        plugin, layer = scenario.plugin, scenario.layer_a
+        calls = []
+        default = (tmp_path / "local.csv").as_uri()
+
+        def get_text(parent, title, label, text="", *a, **k):
+            calls.append(text)
+            if len(calls) == 1:
+                return "my scheme", True
+            return answer or default, True
+        monkeypatch.setattr(QInputDialog, "getText", get_text)
+
+        plugin.vocabulary_manager.source_type_combo.setCurrentIndex(1)   # CSV
+        _import(plugin, tmp_path / "local.csv", LOCAL_CSV)
+
+        # Suggested default is the file's own URI; a non-URI is asked again,
+        # pre-filled with the rejected text so it can be corrected.
+        assert calls == [default, "my scheme"]
+        scheme = answer or default
+        root, child = scheme + "/B51DAF", scheme + "/C329A7"
+        table = {e["scheme_uri"]: e["layer_name"]
+                 for e in get_vocab_entries(scenario.gpkg)}[scheme]
+        import sqlite3
+        with sqlite3.connect(scenario.gpkg) as conn:
+            rows = set(conn.execute(
+                f'SELECT concept, broader, inScheme FROM "{table}"'))
+        assert rows == {(root, "", scheme), (child, root, scheme)}
+
+        bind_feature_to_vocab(scenario.gpkg, "objects_a", scheme)
+        _check_concept(scenario, layer, root, scheme)
+        _pump()
+        assert _widget_options(layer, root) == sorted([root, child])
+        feat = _feat_by_name(layer, "obj-objects_a")
+        assert _form_options(layer, root, feat) == ["Material", "Metall"]
+        _annotate_existing_feature(layer, "obj-objects_a", root, [child])
+
+        out = tmp_path / "export.ttl"
+        monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                            lambda *a, **k: (str(out), "ttl"))
+        manager = plugin.lod_export_manager
+        manager.refresh_forms()
+        manager.forms[0]["id_widget"].setText("O.1")
+        manager.title_input.setText("Local IDs")
+        manager.on_export_all_clicked()
+
+        from rdflib import Graph, Namespace, URIRef
+        g = Graph().parse(str(out), format="turtle")
+        assert (None, Namespace("http://www.w3.org/ns/oa#").hasBody,
+                URIRef(child)) in g
+
+
