@@ -36,7 +36,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl gpg ca-certificates
-          sudo UBUNTU_CODENAME=noble scripts/install_qgis_ubuntu.sh
+          # sudo resets PATH, so hand over the uv binary from setup-uv explicitly.
+          sudo UBUNTU_CODENAME=noble UV_BIN="$(command -v uv)" scripts/install_qgis_ubuntu.sh
 
       - name: Run QGIS-bound tests (offscreen)
         run: scripts/run_qgis_tests.sh -q

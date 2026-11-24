@@ -65,7 +65,8 @@ RDF/CSV parsers and remote vocabulary loading, any SQL against the GeoPackage, s
 valid RDF for any user input).
 
 ## Workflow
-- Branch per work package or batch, pull request to `master` (two people push to this repo). One work package = one commit series.
+- Trunk-based: commit and push directly to `master` (the second collaborator pushes only rarely). Use a branch + pull request only when
+  the human asks for one. One work package = one commit series. Pull before you push.
 - If the spec is ambiguous or contradicts the code, do not guess: add the point to `context/open-questions.md`. If it blocks the package, stop
   and ask; otherwise continue with the rest of the batch and list the question in the report.
 - If the tests still fail after two fix rounds, stop and report instead of trying further.
