@@ -416,6 +416,28 @@ class TestVocabularyCopies:
         assert _form_options(layer, ROOT_URI, feat) == ["Child", "Root"]
         layer.rollBack()
 
+    def test_long_definitions_are_copied(self, scenario, tmp_path, monkeypatch):
+        """A bare memory 'string' field holds 255 characters; the provider
+        rejected longer definitions, leaving the tree with one concept."""
+        plugin, layer = scenario.plugin, scenario.layer_a
+        plugin.dock_widget.show()
+        monkeypatch.setattr(QInputDialog, "getText",
+                            lambda p, t, l, text="", *a, **k: (text, True))
+        long_def = "x" * 300
+        plugin.vocabulary_manager.source_type_combo.setCurrentIndex(1)   # CSV
+        _import(plugin, tmp_path / "long.csv",
+                "concept,prefLabel,definition,broader\n"
+                f"B51DAF,Material,\"{long_def}\",\n"
+                f"C329A7,Metall,\"{long_def}\",B51DAF\n")
+        scheme = (tmp_path / "long.csv").as_uri()
+        root, child = scheme + "/B51DAF", scheme + "/C329A7"
+        bind_feature_to_vocab(scenario.gpkg, "objects_a", scheme)
+        lm = _select_vocab(plugin, layer, scheme)
+        _pump()
+        assert _tree_uris(lm) == {root, child}
+        assert lm.tree_view.topLevelItem(0).childCount() == 1
+        assert {f["definition"] for f in lm._shown_vocab.getFeatures()} == {long_def}
+
     def test_saved_project_refills_the_copies(self, scenario, tmp_path):
         _check_concept(scenario, scenario.layer_a, ROOT_URI)
         _pump()

@@ -72,8 +72,11 @@ def _fill_vocab_layer(layer, gpkg_path, table_name):
         feat = QgsFeature(layer.fields())
         feat.setAttributes(list(row))
         features.append(feat)
-    if not provider.addFeatures(features):
-        raise RuntimeError(f"Could not copy vocabulary '{table_name}'.")
+    if not provider.addFeatures(features) or provider.featureCount() != len(rows):
+        raise RuntimeError(
+            f"Could not copy vocabulary '{table_name}': "
+            f"{provider.featureCount()} of {len(rows)} concepts. "
+            + "; ".join(provider.errors()))
     layer.updateExtents()
     layer.dataChanged.emit()
 
@@ -105,12 +108,18 @@ def ensure_vocab_layer_loaded(gpkg_path, table_name, refresh=False):
     project brought back empty is refilled.  Safe to call repeatedly.
     """
     layer = find_vocab_layer(gpkg_path, table_name)
+    if layer is not None and any(f.length() > 0 for f in layer.fields()):
+        # A copy from a test build, capped at 255 characters: replace it.
+        QgsProject.instance().removeMapLayer(layer.id())
+        layer = None
     if layer is not None:
         if refresh or layer.featureCount() == 0:
             _fill_vocab_layer(layer, gpkg_path, table_name)
         return layer
 
-    fields = "&".join(f"field={name}:string" for name in VOCAB_FIELDS)
+    # string(0): no length limit (a bare 'string' is capped at 255 characters
+    # and the provider silently rejects longer definitions).
+    fields = "&".join(f"field={name}:string(0)" for name in VOCAB_FIELDS)
     layer = QgsVectorLayer(f"None?{fields}", table_name, "memory")
     if not layer.isValid():
         raise RuntimeError(f"Could not create a layer for vocabulary '{table_name}'.")
