@@ -9,6 +9,7 @@ import hashlib
 import os
 import re
 import sqlite3
+from pathlib import Path
 
 # ─── Shared constants ─────────────────────────────────────────────────────────
 # Import these everywhere instead of repeating string literals.
@@ -81,6 +82,29 @@ def ensure_config_table(gpkg_path):
         conn.commit()
     finally:
         conn.close()
+
+
+def has_qskos_config(gpkg_path):
+    """
+    True if gpkg_path is an existing SQLite file that holds a qskos config
+    table.  Opens the file read-only: never creates a file or a table, so it
+    is safe to call for any layer source the user adds.
+    """
+    if not gpkg_path or not os.path.isfile(gpkg_path):
+        return False
+    try:
+        uri = Path(os.path.abspath(gpkg_path)).as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (CONFIG_TABLE,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+    return row is not None
 
 
 def read_config(gpkg_path):

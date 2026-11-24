@@ -11,7 +11,7 @@ Present tense, one page max. History goes to `CHANGELOG.md`. Update after every 
   Tabs still call each other through the plugin object (`plugin.layer_manager…`) and show dialogs directly (WP-004).
 - Utils: `gpkg.py` (pure SQLite: config table, bindings, vocabulary import, ADR-0002; loose functions, one connection per call — WP-002),
   `layers.py` (QGIS: layer path/table, load hidden vocab layers), `annotation.py` (create/reconfigure JSON annotation fields and their
-  ValueRelation widget, ADR-0001/0003), `fields.py` (lenient value reader), `hierarchy.py`, `skos.py` (rdflib/CSV loaders),
+  ValueRelation widget, ADR-0001/0003; `bind_annotation_widgets` runs for every layer added to the project), `fields.py` (lenient value reader), `hierarchy.py`, `skos.py` (rdflib/CSV loaders; local concept IDs minted as `<scheme>/<ID>`),
   `rdf_model.py` + `lod.py` (export, ADR-0005), `logging.py` (`QgsMessageLog`).
 - GeoPackage content: `qskos_layer_config` (vocabulary registrations + feature bindings), one `qskos_vocab_*` table per vocabulary
   (legacy last-segment names still read), annotation fields named after concept URIs in the feature tables.

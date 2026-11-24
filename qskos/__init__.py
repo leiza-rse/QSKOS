@@ -25,7 +25,7 @@ del _mod
 
 from PyQt5.QtWidgets import QAction, QDockWidget, QTabWidget
 from PyQt5.QtCore import Qt, QTimer
-from qgis.core import QgsProject
+from qgis.core import QgsMapLayer, QgsProject
 
 from .tabs.geopackage import GeopackageManager
 from .tabs.vocabulary import VocabularyManager
@@ -33,6 +33,7 @@ from .tabs.layer import LayerManager
 from .tabs.symbology import SymbologyManager
 from .tabs.lod_export import LODExportManager
 from .state import QskosState
+from .utils.annotation import bind_annotation_widgets
 
 
 class qskos:
@@ -93,6 +94,7 @@ class qskos:
 
         project = QgsProject.instance()
         project.layerWasAdded.connect(self.schedule_refresh)
+        project.layerWasAdded.connect(self._on_layer_added)
         project.layerWillBeRemoved.connect(self.schedule_refresh)
         project.readProject.connect(self._restore_gpkg_path)
         project.writeProject.connect(self._save_gpkg_path)
@@ -102,6 +104,7 @@ class qskos:
         project = QgsProject.instance()
         for sig, slot in (
             (project.layerWasAdded,        self.schedule_refresh),
+            (project.layerWasAdded,        self._on_layer_added),
             (project.layerWillBeRemoved,   self.schedule_refresh),
             (project.readProject,          self._restore_gpkg_path),
             (project.writeProject,         self._save_gpkg_path),
@@ -154,6 +157,21 @@ class qskos:
         """Defer a layer combo refresh to the next event loop tick."""
         if self.dock_widget:
             QTimer.singleShot(0, self.layer_manager.refresh_layer_combos)
+
+    def _on_layer_added(self, layer):
+        """
+        A layer joined the project (added by the user or read from a project):
+        load its bound vocabularies so its annotation widgets have options
+        before the Layer tab is ever used.  Deferred, because layers are added
+        while a project is still being read.
+        """
+        layer_id = layer.id()
+        QTimer.singleShot(0, lambda: self._bind_layer_widgets(layer_id))
+
+    def _bind_layer_widgets(self, layer_id):
+        layer = QgsProject.instance().mapLayer(layer_id)
+        if layer is not None and layer.type() == QgsMapLayer.VectorLayer:
+            bind_annotation_widgets(layer, self.state.get_hierarchy_for_layer)
 
     def _on_tab_changed(self, index):
         """Refresh the LOD export forms whenever that tab is shown."""

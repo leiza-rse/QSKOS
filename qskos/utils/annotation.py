@@ -16,7 +16,12 @@ from qgis.core import QgsField, QgsEditorWidgetSetup, QgsDefaultValue
 
 from .hierarchy import get_descendant_uris_fast
 from .fields import find_annotation_field_names
-from .gpkg import F_CONCEPT, F_LABEL, F_DEF
+from .gpkg import (
+    F_CONCEPT, F_LABEL, F_DEF,
+    find_vocab_table_for_scheme, get_bound_vocab_schemes, has_qskos_config,
+)
+from .layers import ensure_vocab_layer_loaded, layer_gpkg_path, layer_table_name
+from .logging import log, LEVEL_WARNING
 
 
 # ── Pure helpers (unit-testable, no QGIS) ─────────────────────────────────────
@@ -64,13 +69,16 @@ def _config_for(vocab_layer, children_map, concept_uri):
 
 def _apply_widget(feature_layer, field_index, vocab_layer, children_map,
                   concept_uri, label):
-    feature_layer.setEditorWidgetSetup(
-        field_index,
-        QgsEditorWidgetSetup(
-            "ValueRelation", _config_for(vocab_layer, children_map, concept_uri)
-        ),
-    )
-    feature_layer.setFieldAlias(field_index, label)
+    config = _config_for(vocab_layer, children_map, concept_uri)
+    current = feature_layer.editorWidgetSetup(field_index)
+    # Unchanged widgets are left alone, so opening a project does not mark it
+    # as modified.
+    if current.type() != "ValueRelation" or current.config() != config:
+        feature_layer.setEditorWidgetSetup(
+            field_index, QgsEditorWidgetSetup("ValueRelation", config)
+        )
+    if feature_layer.attributeAlias(field_index) != label:
+        feature_layer.setFieldAlias(field_index, label)
 
 
 def create_annotation_field(feature_layer, vocab_layer, children_map,
@@ -147,3 +155,33 @@ def reinitialize_annotation_fields_for_vocab(feature_layer, vocab_layer,
         reconfigure_annotation_field(
             feature_layer, vocab_layer, children_map, name, concept_labels[name]
         )
+
+
+def bind_annotation_widgets(feature_layer, get_hierarchy):
+    """
+    Load every vocabulary bound to feature_layer (as hidden layers) and point
+    its annotation fields' widgets at them.  The widgets read their options
+    from those layers, so without this a form opened before the Layer tab was
+    used shows no options.
+
+    Does nothing for layers that are not in a GeoPackage with qskos bindings.
+    get_hierarchy: vocab_layer -> (children_map, concept_labels), i.e.
+    QskosState.get_hierarchy_for_layer.
+    """
+    table = layer_table_name(feature_layer)
+    gpkg_path = layer_gpkg_path(feature_layer)
+    if not table or not has_qskos_config(gpkg_path):
+        return
+    for scheme_uri in get_bound_vocab_schemes(gpkg_path, table):
+        vocab_table = find_vocab_table_for_scheme(gpkg_path, scheme_uri)
+        if not vocab_table:
+            continue
+        try:
+            vocab_layer = ensure_vocab_layer_loaded(gpkg_path, vocab_table)
+            children_map, labels = get_hierarchy(vocab_layer)
+            reinitialize_annotation_fields_for_vocab(
+                feature_layer, vocab_layer, children_map, labels
+            )
+        except Exception as e:
+            log(f"Cannot bind annotation widgets for {scheme_uri}: {e}",
+                LEVEL_WARNING)

@@ -11,6 +11,8 @@
 #   * ticking a concept while the layer was in edit mode committed the user's
 #     unrelated pending edits
 #   * a newly imported vocabulary did not appear in the Layer tab
+#   * a layer added to a new project showed annotation widgets without
+#     options until the Layer tab was used (vocabulary layer not loaded)
 #   * a CSV vocabulary with local concept IDs (no URIs) was stored as is, and
 #     the LOD export then failed with 'Invalid line: <C329A7> .'
 #
@@ -341,3 +343,40 @@ class TestLocalIdVocabulary:
                 URIRef(child)) in g
 
 
+
+
+class TestLayerAddedToProject:
+    """The vocabulary layers of a GeoPackage are loaded when one of its
+    layers joins the project, not only when the Layer tab is used."""
+
+    def _drop_from_project(self, layer):
+        vid = layer.editorWidgetSetup(
+            layer.fields().lookupField(ROOT_URI)).config()["Layer"]
+        QgsProject.instance().removeMapLayers([vid, layer.id()])
+        _pump()
+
+    def test_new_layer_offers_options_without_layer_tab(self, scenario):
+        from qgis.core import QgsVectorLayer
+        _check_concept(scenario, scenario.layer_a, ROOT_URI)
+        _pump()
+        self._drop_from_project(scenario.layer_a)
+
+        # As in a new project: add the GeoPackage layer again.
+        layer = QgsVectorLayer(f"{scenario.gpkg}|layername=objects_a",
+                               "objects_a", "ogr")
+        QgsProject.instance().addMapLayer(layer)
+        _pump()
+
+        feat = _feat_by_name(layer, "obj-objects_a")
+        assert _form_options(layer, ROOT_URI, feat) == ["Child", "Root"]
+
+    def test_unrelated_geopackage_is_not_written(self, scenario, tmp_path):
+        import sqlite3
+        other = str(tmp_path / "other.gpkg")
+        layer = _make_gpkg_feature_layer(other, "roads")
+        QgsProject.instance().addMapLayer(layer)
+        _pump()
+        with sqlite3.connect(other) as conn:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+        assert not any(t.startswith("qskos") for t in tables)

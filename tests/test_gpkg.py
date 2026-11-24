@@ -6,6 +6,7 @@ import sqlite3
 
 from qskos.utils.gpkg import (
     ensure_config_table,
+    has_qskos_config,
     read_config,
     get_vocab_entries,
     get_bound_vocab_schemes,
@@ -43,6 +44,35 @@ class TestConfigTable:
         gpkg = str(tmp_path / "x.gpkg")
         ensure_config_table(gpkg)
         assert read_config(gpkg) == []
+
+
+class TestHasQskosConfig:
+    def test_true_for_qskos_gpkg(self, tmp_path):
+        gpkg = str(tmp_path / "x.gpkg")
+        ensure_config_table(gpkg)
+        assert has_qskos_config(gpkg)
+
+    def test_missing_file_is_not_created(self, tmp_path):
+        gpkg = tmp_path / "missing.gpkg"
+        assert not has_qskos_config(str(gpkg))
+        assert not gpkg.exists()
+
+    def test_other_sqlite_file_is_left_untouched(self, tmp_path):
+        gpkg = tmp_path / "other.gpkg"
+        conn = sqlite3.connect(gpkg)
+        conn.execute("CREATE TABLE roads (id INTEGER)")
+        conn.commit()
+        conn.close()
+        before = gpkg.read_bytes()
+        assert not has_qskos_config(str(gpkg))
+        assert gpkg.read_bytes() == before
+
+    def test_non_sqlite_and_odd_paths(self, tmp_path):
+        shp = tmp_path / "a b#?%.shp"
+        shp.write_bytes(b"not sqlite")
+        assert not has_qskos_config(str(shp))
+        assert not has_qskos_config("")
+        assert not has_qskos_config(None)
 
 
 class TestBinding:

@@ -19,8 +19,8 @@ from qgis.core import QgsProject, QgsMapLayer, QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
 from ..utils.annotation import (
+    bind_annotation_widgets,
     create_annotation_field,
-    reinitialize_annotation_fields_for_vocab,
 )
 from ..utils.gpkg import (
     read_config, get_vocab_entries, get_bound_vocab_schemes,
@@ -361,31 +361,10 @@ class LayerManager:
         return True
 
     def reinitialize_all_annotation_fields_for_layer(self, feature_layer):
-        """
-        Re-point the ValueRelation widgets of all annotation fields on a layer,
-        across every vocabulary bound to it (fields are recognised by their
-        concept-URI names).
-        """
-        if feature_layer is None or not self._gpkg:
-            return
-        table = layer_table_name(feature_layer)
-        if not table:
-            return
-        for scheme_uri in get_bound_vocab_schemes(self._gpkg, table):
-            vocab_table = find_vocab_table_for_scheme(self._gpkg, scheme_uri)
-            if not vocab_table:
-                continue
-            try:
-                vocab_layer = ensure_vocab_layer_loaded(self._gpkg, vocab_table)
-                children_map, labels = self.plugin.state.get_hierarchy_for_layer(
-                    vocab_layer
-                )
-                reinitialize_annotation_fields_for_vocab(
-                    feature_layer, vocab_layer, children_map, labels
-                )
-            except Exception as e:
-                log(f"Reinitialize fields failed for {scheme_uri}: {e}",
-                    LEVEL_WARNING)
+        """Re-point the widgets of all annotation fields on a layer."""
+        if feature_layer is not None:
+            bind_annotation_widgets(
+                feature_layer, self.plugin.state.get_hierarchy_for_layer)
 
     def on_vocabularies_changed(self):
         """A vocabulary was imported/replaced: refresh widgets, list and tree."""
